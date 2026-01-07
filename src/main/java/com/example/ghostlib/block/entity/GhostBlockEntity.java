@@ -14,16 +14,30 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
+/**
+ * Represents the intelligence behind a Ghost Block marker.
+ * This BlockEntity tracks the construction lifecycle, target state, and drone assignment.
+ */
 public class GhostBlockEntity extends BlockEntity {
 
+    /**
+     * Defines the visual and logical lifecycle of a Ghost block.
+     */
     public enum GhostState {
-        UNASSIGNED(0),      // Deep Blue
-        ASSIGNED(1),        // Light Blue
-        FETCHING(2),        // Dark Blue (En route to player)
-        INCOMING(3),        // Yellow (En route to build)
-        TO_REMOVE(4),       // Red
-        MISSING_ITEMS(5),   // Deep Blue (Error)
-        REMOVING(6);        // Red (Assigned)
+        /** Default state. Job is in the construction queue, waiting for a drone. (Deep Blue) */
+        UNASSIGNED(0),      
+        /** A drone has claimed the job and is currently pathfinding. (Light Blue) */
+        ASSIGNED(1),        
+        /** Drone is currently at the player retrieving required items. (Dark Blue) */
+        FETCHING(2),        
+        /** Drone has the items and is flying to the build site. (Yellow) */
+        INCOMING(3),        
+        /** Position is marked for deconstruction/removal. (Red Wireframe) */
+        TO_REMOVE(4),       
+        /** Job failed (e.g., items missing). The job is hibernating. (Purple) */
+        MISSING_ITEMS(5),   
+        /** A drone is actively breaking the block at this position. (Red Wireframe) */
+        REMOVING(6);        
 
         public final int id;
         GhostState(int id) { this.id = id; }
@@ -32,15 +46,22 @@ public class GhostBlockEntity extends BlockEntity {
             return UNASSIGNED;
         }
 
+        /**
+         * Returns true if this state belongs in a searchable job queue.
+         */
         public boolean isQueueState() {
             return this == UNASSIGNED || this == TO_REMOVE || this == MISSING_ITEMS;
         }
     }
 
+    /** The block that will be placed once construction is complete. */
     private BlockState targetState = Blocks.AIR.defaultBlockState();
+    /** The state of the block that was there before (used for rendering deconstruction). */
     private BlockState capturedState = Blocks.AIR.defaultBlockState(); 
+    /** The UUID of the drone currently working on this block. */
     @Nullable
     private UUID assignedTo;
+    /** Current phase of the construction lifecycle. */
     private GhostState currentState = GhostState.UNASSIGNED;
 
     public GhostBlockEntity(BlockPos pos, BlockState blockState) {
@@ -52,25 +73,37 @@ public class GhostBlockEntity extends BlockEntity {
     public GhostState getCurrentState() { return this.currentState; }
     public UUID getAssignedTo() { return this.assignedTo; }
 
+    /**
+     * Updates the target block to be built and syncs to clients.
+     */
     public void setTargetState(BlockState state) {
         this.targetState = state;
         sync();
     }
 
+    /**
+     * Updates the captured original block (for Red Wireframe rendering) and syncs.
+     */
     public void setCapturedState(BlockState state) {
         this.capturedState = state;
         sync();
     }
 
+    /**
+     * Changes the current lifecycle state and updates the Job Manager queues.
+     */
     public void setState(GhostState state) {
         this.currentState = state;
         if (level != null && !level.isClientSide) {
-            // Only update the Job Manager if this is a state that affects the job queues
             GhostJobManager.get(level).registerJob(getBlockPos(), state, targetState);
         }
         sync();
     }
 
+    /**
+     * Called when the BlockEntity is loaded into the world.
+     * Ensures the job is registered in the JobManager's volatile memory.
+     */
     @Override
     public void onLoad() {
         super.onLoad();
@@ -79,6 +112,10 @@ public class GhostBlockEntity extends BlockEntity {
         }
     }
 
+    /**
+     * Assigns a drone to this ghost block. Handles automatic state transitions
+     * between Queue states and Active states.
+     */
     public void setAssignedTo(@Nullable UUID assignedTo) {
         this.assignedTo = assignedTo;
         if (assignedTo != null) {
@@ -89,8 +126,6 @@ public class GhostBlockEntity extends BlockEntity {
                 this.currentState = GhostState.ASSIGNED;
             }
             if (level != null && !level.isClientSide) {
-                // registerJob(state) with active state will remove it from search queues
-                // but crucially removeFromAllMaps(pos, false) will KEEP the assignment record.
                 GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
             }
         } else {
@@ -103,6 +138,9 @@ public class GhostBlockEntity extends BlockEntity {
         sync();
     }
 
+    /**
+     * Ensures the job is removed from the manager when the block is broken.
+     */
     @Override
     public void setRemoved() {
         if (level != null && !level.isClientSide) {
@@ -111,6 +149,9 @@ public class GhostBlockEntity extends BlockEntity {
         super.setRemoved();
     }
 
+    /**
+     * Triggers a block update packet to synchronize data to nearby clients.
+     */
     private void sync() {
         if (level != null && !level.isClientSide) {
             setChanged();
