@@ -1,0 +1,344 @@
+package com.example.ghostlib.entity;
+
+import com.example.ghostlib.block.entity.GhostBlockEntity;
+import com.example.ghostlib.util.GhostJobManager;
+import com.example.ghostlib.registry.ModItems;
+import com.example.ghostlib.registry.ModBlocks;
+import com.example.ghostlib.block.GhostBlock;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
+
+public class DroneEntity extends PathfinderMob {
+    
+    public enum DroneState {
+        IDLE, FINDING_JOB, TRAVELING_CLEAR, TRAVELING_FETCH, TRAVELING_BUILD, DUMPING_ITEMS   
+    }
+
+    private DroneState droneState = DroneState.IDLE;
+    private GhostJobManager.Job currentJob = null;
+    private final SimpleContainer inventory = new SimpleContainer(9); 
+    private int waitTicks = 0;
+    private int idleTicks = 0;
+    private int lingerTicks = 0; 
+    private static final int MAX_IDLE_TICKS = 600; 
+
+    public DroneEntity(EntityType<? extends PathfinderMob> type, Level level) {
+        super(type, level);
+        this.setNoGravity(true);
+        this.noPhysics = true;
+    }
+
+    public static AttributeSupplier.Builder createAttributes() {
+        return PathfinderMob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 20.0D)
+                .add(Attributes.MOVEMENT_SPEED, 1.0D);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (this.level().isClientSide) return;
+
+        if (waitTicks > 0) {
+            waitTicks--;
+            return;
+        }
+
+        // Integrity check: Ensure job wasn't stolen or deleted
+        if (currentJob != null && droneState != DroneState.IDLE && droneState != DroneState.DUMPING_ITEMS) {
+            if (!GhostJobManager.get(level()).isAssignedTo(currentJob.pos(), this.getUUID())) {
+                this.currentJob = null;
+                this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
+            }
+        }
+
+        switch (droneState) {
+            case IDLE -> handleIdle();
+            case FINDING_JOB -> handleFindingJob();
+            case TRAVELING_CLEAR -> handleTravelingClear();
+            case TRAVELING_FETCH -> handleTravelingFetch();
+            case TRAVELING_BUILD -> handleTravelingBuild();
+            case DUMPING_ITEMS -> handleDumpingItems();
+        }
+    }
+
+    private void handleIdle() {
+        if (!isInventoryEmpty()) { this.droneState = DroneState.DUMPING_ITEMS; return; }
+
+        if (lingerTicks > 0) {
+            lingerTicks--;
+            this.setDeltaMovement(this.getDeltaMovement().scale(0.8));
+        } else {
+            Player player = this.level().getNearestPlayer(this, 32);
+            if (player != null) {
+                Vec3 target = player.position().add(1.5, 2.0, 1.5);
+                moveSmoothlyTo(target, 0.2);
+                this.getLookControl().setLookAt(player);
+                idleTicks++;
+                if (idleTicks > MAX_IDLE_TICKS) { returnToPlayer(player); return; }
+            }
+        }
+        
+        if (this.tickCount % 20 == 0) this.droneState = DroneState.FINDING_JOB;
+    }
+
+    private void handleFindingJob() {
+        if (!hasSpace()) { this.droneState = DroneState.DUMPING_ITEMS; return; }
+
+        GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), hasSpace());
+        if (job != null) {
+            this.currentJob = job;
+            idleTicks = 0;
+            lingerTicks = 0;
+
+            if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
+                // Claim the ghost visually
+                if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                    gbe.setAssignedTo(this.getUUID());
+                }
+
+                ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
+                
+                // 1. Check Internal Inventory
+                if (hasItemInInventory(required)) {
+                    this.droneState = DroneState.TRAVELING_BUILD;
+                    if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                         if (gbe.getCurrentState() != GhostBlockEntity.GhostState.INCOMING) gbe.setState(GhostBlockEntity.GhostState.INCOMING);
+                    }
+                    return;
+                }
+
+                // 2. Check Player Inventory
+                Player player = level().getNearestPlayer(this, 64);
+                if (player != null && player.getInventory().findSlotMatchingItem(required) != -1) {
+                    this.droneState = DroneState.TRAVELING_FETCH;
+                    if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                         if (gbe.getCurrentState() != GhostBlockEntity.GhostState.FETCHING) gbe.setState(GhostBlockEntity.GhostState.FETCHING);
+                    }
+                } else {
+                    // 3. Fail -> Deep Blue
+                    if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                        gbe.setState(GhostBlockEntity.GhostState.MISSING_ITEMS);
+                    }
+                    GhostJobManager.get(level()).releaseJob(job.pos(), this.getUUID());
+                    this.currentJob = null;
+                    this.waitTicks = 40;
+                    this.droneState = DroneState.IDLE;
+                }
+            } else {
+                // Deconstruction job
+                this.droneState = DroneState.TRAVELING_CLEAR;
+                if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                    gbe.setAssignedTo(this.getUUID());
+                }
+            }
+        } else {
+            this.droneState = DroneState.IDLE;
+        }
+    }
+
+    private void handleTravelingClear() {
+        if (currentJob == null) { resetToIdle(); return; }
+
+        moveSmoothlyTo(currentJob.pos().getCenter(), 0.6);
+        if (this.position().distanceTo(currentJob.pos().getCenter()) < 1.5) {
+            BlockPos pos = currentJob.pos();
+            BlockState existing = level().getBlockState(pos);
+            BlockState targetAfter = currentJob.targetAfter();
+
+            // Harvest logic
+            if (level().getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
+                BlockState captured = gbe.getCapturedState();
+                if (!captured.isAir()) harvest(pos, captured);
+                else if (!existing.isAir() && !(existing.getBlock() instanceof GhostBlock)) harvest(pos, existing);
+            } else if (!existing.isAir() && !(existing.getBlock() instanceof GhostBlock)) {
+                harvest(pos, existing);
+            }
+
+            // Execute
+            level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+            GhostJobManager.get(level()).removeJob(pos);
+
+            // Transition
+            if (targetAfter != null && !targetAfter.isAir()) {
+                level().setBlock(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
+                if (level().getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
+                    gbe.setTargetState(targetAfter);
+                    gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
+                }
+            }
+            
+            this.lingerTicks = 5; 
+            this.currentJob = null; 
+            this.droneState = isInventoryEmpty() ? DroneState.FINDING_JOB : DroneState.DUMPING_ITEMS;
+        }
+    }
+
+    private void harvest(BlockPos pos, BlockState state) {
+        ItemStack drop = new ItemStack(state.getBlock().asItem());
+        if (!drop.isEmpty()) {
+            ItemStack remainder = this.inventory.addItem(drop);
+            if (!remainder.isEmpty()) Block.popResource(level(), pos, remainder);
+        }
+    }
+
+    private void handleTravelingFetch() {
+        if (currentJob == null) { resetToIdle(); return; }
+
+        ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
+        if (hasItemInInventory(required)) { this.droneState = DroneState.TRAVELING_BUILD; return; }
+
+        Player player = level().getNearestPlayer(this, 64);
+        if (player == null) { resetToIdle(); return; }
+
+        Vec3 fetchPos = player.position().add(0, player.getEyeHeight(), 0);
+        moveSmoothlyTo(fetchPos, 0.7);
+
+        if (this.position().distanceTo(fetchPos) < 2.0) {
+            int slot = player.getInventory().findSlotMatchingItem(required);
+            boolean acquired = false;
+            
+            if (slot != -1) {
+                ItemStack stackInSlot = player.getInventory().getItem(slot);
+                if (!stackInSlot.isEmpty() && stackInSlot.is(required.getItem())) {
+                     ItemStack taken = stackInSlot.split(1);
+                     this.inventory.addItem(taken);
+                     acquired = true;
+                }
+            }
+
+            if (acquired) {
+                this.droneState = DroneState.TRAVELING_BUILD;
+                if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
+                     if (gbe.getCurrentState() != GhostBlockEntity.GhostState.INCOMING) gbe.setState(GhostBlockEntity.GhostState.INCOMING);
+                }
+            } else {
+                if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
+                    gbe.setState(GhostBlockEntity.GhostState.MISSING_ITEMS);
+                }
+                GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+                currentJob = null;
+                waitTicks = 100;
+                this.droneState = DroneState.IDLE;
+            }
+        }
+    }
+
+    /**
+     * Handles the building phase: Move to site and place the block.
+     * Includes an obstruction check to handle gravity-affected blocks (Gravel/Sand) that may have fallen into the site.
+     */
+    private void handleTravelingBuild() {
+        if (currentJob == null) { resetToIdle(); return; }
+
+        ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
+        if (!hasItemInInventory(required)) { this.droneState = DroneState.TRAVELING_FETCH; return; }
+
+        moveSmoothlyTo(currentJob.pos().getCenter(), 0.7);
+        if (this.position().distanceTo(currentJob.pos().getCenter()) < 1.5) {
+            BlockPos pos = currentJob.pos();
+            BlockState worldState = level().getBlockState(pos);
+
+            // Obstruction Check: Handle fallen Gravel/Sand or player-placed blocks
+            if (!worldState.isAir() && !worldState.canBeReplaced() && !(worldState.getBlock() instanceof GhostBlock)) {
+                 // Convert to deconstruction job
+                 GhostJobManager.get(level()).registerDirectDeconstruct(pos, currentJob.targetAfter(), level());
+                 this.currentJob = null;
+                 this.droneState = DroneState.FINDING_JOB;
+                 return;
+            }
+
+            // Execute Build
+            this.level().setBlock(pos, currentJob.targetAfter(), 3);
+            consumeFromInventory(required);
+            GhostJobManager.get(level()).removeJob(pos);
+            
+            this.lingerTicks = 5;
+            this.currentJob = null;
+            this.droneState = DroneState.IDLE;
+        }
+    }
+
+    private void handleDumpingItems() {
+        Player player = level().getNearestPlayer(this, 32);
+        if (player == null) { this.droneState = DroneState.IDLE; return; }
+
+        Vec3 dumpPos = player.position().add(0, player.getEyeHeight(), 0);
+        moveSmoothlyTo(dumpPos, 0.6);
+
+        if (this.position().distanceTo(dumpPos) < 2.5) {
+            boolean droppedAny = false;
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack stack = inventory.getItem(i);
+                if (!stack.isEmpty()) {
+                    if (player.getInventory().add(stack)) { inventory.setItem(i, ItemStack.EMPTY); droppedAny = true; }
+                    else { Block.popResource(level(), player.blockPosition(), stack.copy()); inventory.setItem(i, ItemStack.EMPTY); droppedAny = true; }
+                }
+            }
+            if (isInventoryEmpty()) { this.lingerTicks = 10; this.droneState = DroneState.IDLE; }
+        }
+    }
+
+    private void returnToPlayer(Player player) {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty()) Block.popResource(level(), blockPosition(), stack);
+        }
+        ItemStack egg = new ItemStack(ModItems.DRONE_SPAWN_EGG.get());
+        if (!player.getInventory().add(egg)) Block.popResource(level(), blockPosition(), egg);
+        this.discard();
+    }
+
+    private void moveSmoothlyTo(Vec3 target, double speed) {
+        Vec3 dir = target.subtract(this.position());
+        double dist = dir.length();
+        if (dist > 0.01) {
+            double approachSpeed = speed;
+            if (dist < 2.0) approachSpeed *= (dist / 2.0); 
+            this.setDeltaMovement(dir.scale(approachSpeed / dist));
+            if (droneState != DroneState.IDLE) this.getLookControl().setLookAt(target.x, target.y, target.z);
+        } else { this.setDeltaMovement(Vec3.ZERO); }
+    }
+
+    private void resetToIdle() {
+        if (currentJob != null) GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+        this.currentJob = null;
+        this.droneState = DroneState.IDLE;
+    }
+
+    private boolean isInventoryEmpty() {
+        for (int i = 0; i < inventory.getContainerSize(); i++) if (!inventory.getItem(i).isEmpty()) return false;
+        return true;
+    }
+
+    private boolean hasSpace() {
+        for (int i = 0; i < inventory.getContainerSize(); i++) if (inventory.getItem(i).isEmpty()) return true;
+        return false;
+    }
+
+    private boolean hasItemInInventory(ItemStack stack) {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack s = inventory.getItem(i);
+            if (!s.isEmpty() && s.is(stack.getItem())) return true;
+        }
+        return false;
+    }
+
+    private void consumeFromInventory(ItemStack stack) {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack s = inventory.getItem(i);
+            if (!s.isEmpty() && s.is(stack.getItem())) { s.shrink(1); return; }
+        }
+    }
+}
