@@ -57,88 +57,91 @@ public class GhostPlacerItem extends Item {
             private GhostPlacerItemRenderer renderer;
             @Override
             public BlockEntityWithoutLevelRenderer getCustomRenderer() {
-                if (this.renderer == null) {
-                    this.renderer = new GhostPlacerItemRenderer();
-                }
+                if (this.renderer == null) this.renderer = new GhostPlacerItemRenderer();
                 return this.renderer;
             }
         });
     }
 
-    @Override
-    public int getUseDuration(ItemStack pStack, LivingEntity p_344979_) { return 72000; }
-    @Override
-    public UseAnim getUseAnimation(ItemStack pStack) { return UseAnim.BOW; }
+    @Override public int getUseDuration(ItemStack pStack, LivingEntity p_344979_) { return 72000; }
+    @Override public UseAnim getUseAnimation(ItemStack pStack) { return UseAnim.BOW; }
 
     private boolean hasPattern(ItemStack stack) {
         return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().contains("Pattern");
+    }
+    
+    public enum ToolMode {
+        PLACE, DECONSTRUCT, CUT
+    }
+
+    public void setMode(ItemStack stack, int modeOrdinal) {
+        if (modeOrdinal >= 0 && modeOrdinal < ToolMode.values().length) {
+            CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+            tag.putInt("ToolMode", modeOrdinal);
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        }
+    }
+
+    public ToolMode getMode(ItemStack stack) {
+        CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+        if (tag.contains("ToolMode")) {
+            return ToolMode.values()[Math.max(0, Math.min(ToolMode.values().length - 1, tag.getInt("ToolMode")))];
+        }
+        return ToolMode.PLACE;
     }
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level pLevel, Player pPlayer, InteractionHand pUsedHand) {
         ItemStack stack = pPlayer.getItemInHand(pUsedHand);
         BlockHitResult hitResult = raycast(pPlayer, 64.0D);
-
         if (hitResult.getType() == HitResult.Type.BLOCK) {
             BlockPos clickedPos = hitResult.getBlockPos();
-
-            if (pPlayer.isShiftKeyDown() && !hasPattern(stack)) {
-                CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
-                handleCopy(pLevel, pPlayer, tag, clickedPos);
-                setTag(stack, tag);
-                return InteractionResultHolder.success(stack);
-            }
-
-            if (hasPattern(stack)) {
-                if (pLevel.isClientSide) {
-                    ClientGhostState.startDrag(clickedPos.relative(hitResult.getDirection()));
+            ToolMode mode = getMode(stack);
+            
+            // Selection Logic (Shift+Click) for ALL modes that might need it (Copy, Cut, Deconstruct)
+            if (pPlayer.isShiftKeyDown()) {
+                if (mode == ToolMode.PLACE && !hasPattern(stack)) {
+                    // Copy Mode
+                    CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+                    handleCopy(pLevel, pPlayer, tag, clickedPos);
+                    stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+                    return InteractionResultHolder.success(stack);
+                } else if (mode == ToolMode.CUT || mode == ToolMode.DECONSTRUCT) {
+                    // Cut/Deconstruct Selection Mode
+                    CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+                    if (!tag.contains("Pos1")) {
+                        tag.putLong("Pos1", clickedPos.asLong());
+                        if (pLevel.isClientSide) pPlayer.displayClientMessage(Component.literal("First position set."), true);
+                    } else {
+                        // Second position set -> Execute immediately
+                        BlockPos pos1 = BlockPos.of(tag.getLong("Pos1"));
+                        tag.remove("Pos1");
+                        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+                        
+                        if (!pLevel.isClientSide) {
+                            executeAreaAction((ServerLevel)pLevel, (ServerPlayer)pPlayer, stack, pos1, clickedPos, mode);
+                        }
+                    }
+                    stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+                    return InteractionResultHolder.success(stack);
                 }
+            }
+            
+            // Dragging Logic (Normal Click)
+            if (hasPattern(stack) || mode == ToolMode.CUT || mode == ToolMode.DECONSTRUCT) {
+                if (pLevel.isClientSide) ClientGhostState.startDrag(clickedPos.relative(hitResult.getDirection()));
                 pPlayer.startUsingItem(pUsedHand);
                 return InteractionResultHolder.consume(stack);
             }
         }
-
         pPlayer.startUsingItem(pUsedHand);
         return InteractionResultHolder.consume(stack);
     }
 
-    @Override
-    public InteractionResult useOn(UseOnContext context) {
-        Player player = context.getPlayer();
-        if (player == null) return InteractionResult.PASS;
-
-        ItemStack stack = context.getItemInHand();
-        BlockHitResult hitResult = raycast(player, 64.0D);
-        BlockPos clickedPos = (hitResult.getType() == HitResult.Type.BLOCK) ? hitResult.getBlockPos() : context.getClickedPos();
-
-        if (player.isShiftKeyDown() && !hasPattern(stack)) {
-            CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
-            handleCopy(context.getLevel(), player, tag, clickedPos);
-            setTag(stack, tag);
-            return InteractionResult.SUCCESS;
-        }
-
-        if (hasPattern(stack)) {
-            if (context.getLevel().isClientSide) {
-                Direction face = hitResult.getType() == HitResult.Type.BLOCK ? hitResult.getDirection() : context.getClickedFace();
-                ClientGhostState.startDrag(clickedPos.relative(face));
-            }
-            return InteractionResult.PASS; 
-        }
-
-        return InteractionResult.FAIL;
-    }
-
     private BlockHitResult raycast(Player player, double distance) {
         Vec3 eyePos = player.getEyePosition();
-        Vec3 viewVec = player.getViewVector(1.0F);
-        Vec3 targetVec = eyePos.add(viewVec.scale(distance));
-        return player.level().clip(new net.minecraft.world.level.ClipContext(
-            eyePos, targetVec, 
-            net.minecraft.world.level.ClipContext.Block.OUTLINE, 
-            net.minecraft.world.level.ClipContext.Fluid.NONE, 
-            player
-        ));
+        Vec3 targetVec = eyePos.add(player.getViewVector(1.0F).scale(distance));
+        return player.level().clip(new net.minecraft.world.level.ClipContext(eyePos, targetVec, net.minecraft.world.level.ClipContext.Block.OUTLINE, net.minecraft.world.level.ClipContext.Fluid.NONE, player));
     }
 
     @Override
@@ -146,148 +149,129 @@ public class GhostPlacerItem extends Item {
         if (pLevel.isClientSide && pLivingEntity instanceof Player player) {
             if (ClientGhostState.isDragging) {
                 BlockHitResult hitResult = raycast(player, 64.0D);
-                BlockPos endPos = hitResult.getBlockPos();
-                
+                int mode = 0;
                 long window = Minecraft.getInstance().getWindow().getWindow();
-                boolean isCtrl = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL);
-                boolean isShift = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT);
-                
-                int mode = 0; // Normal
-                if (isCtrl && isShift) mode = 2; // Full Force
-                else if (isCtrl) mode = 1; // Semi Force
-                
-                Minecraft.getInstance().getConnection().send(new ServerboundPlaceGhostsPacket(ClientGhostState.anchorPos, endPos, mode));
+                if (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL)) mode = 1;
+                Minecraft.getInstance().getConnection().send(new ServerboundPlaceGhostsPacket(ClientGhostState.anchorPos, hitResult.getBlockPos(), mode));
                 ClientGhostState.stopDrag();
             }
         }
     }
 
-    /**
-     * Processes the placement of ghost blocks based on a start and end position (drag area).
-     * Handles different placement modes: Normal (Air only), Semi-Force (Replace solids), Full-Force (Clear volume).
-     */
     public void handlePlacementPacket(ServerLevel level, ServerPlayer player, ItemStack stack, BlockPos start, BlockPos end, int placementMode) {
         CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
-        if (!tag.contains("Pattern")) return;
+        ToolMode toolMode = getMode(stack);
 
-        ListTag patternList = tag.getList("Pattern", 10);
-        int sizeX = Math.max(1, tag.getInt("SizeX"));
-        int sizeY = Math.max(1, tag.getInt("SizeY"));
-        int sizeZ = Math.max(1, tag.getInt("SizeZ"));
-        
-        int dx = end.getX() - start.getX();
-        int dz = end.getZ() - start.getZ();
-
-        Direction dir;
-        int count;
-
-        // Determine tiling direction based on major axis of the drag
-        if (Math.abs(dx) > Math.abs(dz)) {
-            dir = dx > 0 ? Direction.EAST : Direction.WEST;
-            count = 1 + Math.abs(dx) / sizeX;
-        } else {
-            dir = dz > 0 ? Direction.SOUTH : Direction.NORTH;
-            count = 1 + Math.abs(dz) / sizeZ;
+        // Handle Cut/Deconstruct drag without needing a pattern first
+        if (toolMode != ToolMode.PLACE && !tag.contains("Pattern")) {
+            executeAreaAction(level, player, stack, start, end, toolMode);
+            return;
         }
-        
-        int placedCount = 0;
-        List<GhostHistoryManager.GhostRecord> historyRecords = new ArrayList<>();
-        GhostJobManager jobManager = GhostJobManager.get(level);
-        
-        for (int r = 0; r < count; r++) {
-            BlockPos currentOrigin = start;
-            if (r > 0) {
-                 if (dir.getAxis() == Direction.Axis.X) currentOrigin = start.relative(dir, r * sizeX);
-                 else if (dir.getAxis() == Direction.Axis.Z) currentOrigin = start.relative(dir, r * sizeZ);
-            }
-            
-            Set<BlockPos> patternPositions = new HashSet<>();
-            for (int i = 0; i < patternList.size(); i++) {
-                patternPositions.add(NbtUtils.readBlockPos(patternList.getCompound(i), "Rel").orElse(BlockPos.ZERO));
-            }
 
+        if (!tag.contains("Pattern")) return;
+        ListTag patternList = tag.getList("Pattern", 10);
+        
+        List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
+        
+        // Calculate Tiling Positions
+        List<BlockPos> placementOrigins = new ArrayList<>();
+        
+        // Determine pattern size/bounds to calculate spacing
+        int sizeX = tag.getInt("SizeX");
+        int sizeY = tag.getInt("SizeY");
+        int sizeZ = tag.getInt("SizeZ");
+        if (sizeX == 0) sizeX = 1; // Sanity check
+        if (sizeZ == 0) sizeZ = 1;
+
+        if (placementMode == 1) { // Area Mode (Grid)
+             int xDir = end.getX() >= start.getX() ? 1 : -1;
+             int zDir = end.getZ() >= start.getZ() ? 1 : -1;
+             
+             int xRange = Math.abs(end.getX() - start.getX());
+             int zRange = Math.abs(end.getZ() - start.getZ());
+             
+             for (int x = 0; x <= xRange; x += sizeX) {
+                 for (int z = 0; z <= zRange; z += sizeZ) {
+                     placementOrigins.add(start.offset(x * xDir, 0, z * zDir));
+                 }
+             }
+        } else { // Line Mode (Default)
+             int dx = end.getX() - start.getX();
+             int dz = end.getZ() - start.getZ();
+             
+             if (Math.abs(dx) >= Math.abs(dz)) {
+                 int steps = Math.abs(dx) / sizeX;
+                 int dir = dx >= 0 ? 1 : -1;
+                 for (int i=0; i<=steps; i++) {
+                     placementOrigins.add(start.offset(i * sizeX * dir, 0, 0));
+                 }
+             } else {
+                 int steps = Math.abs(dz) / sizeZ;
+                 int dir = dz >= 0 ? 1 : -1;
+                 for (int i=0; i<=steps; i++) {
+                     placementOrigins.add(start.offset(0, 0, i * sizeZ * dir));
+                 }
+             }
+        }
+
+        // Execute Placement for each origin
+        for (BlockPos origin : placementOrigins) {
             for (int i = 0; i < patternList.size(); i++) {
                 CompoundTag blockTag = patternList.getCompound(i);
-                BlockPos relative = NbtUtils.readBlockPos(blockTag, "Rel").orElse(BlockPos.ZERO);
+                BlockPos rel = NbtUtils.readBlockPos(blockTag, "Rel").orElse(BlockPos.ZERO);
                 BlockState bpState = NbtUtils.readBlockState(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), blockTag.getCompound("State"));
                 
-                if (bpState != null && !bpState.isAir()) {
-                    BlockPos target = currentOrigin.offset(relative);
-                    BlockState worldState = level.getBlockState(target);
-                    
-                    // Already correct? Skip.
-                    if (worldState.equals(bpState)) {
-                        jobManager.removeJob(target);
-                        continue;
-                    }
+                BlockPos target = origin.offset(rel);
+                BlockState worldState = level.getBlockState(target);
 
-                    // Check for obstructions.
-                    boolean isGhost = worldState.getBlock() instanceof GhostBlock;
-                    boolean isFluid = !worldState.getFluidState().isEmpty();
-                    boolean isAir = worldState.isAir();
-                    boolean isReplaceable = worldState.canBeReplaced();
-
-                    if (!isAir && !isGhost && !isFluid) {
-                        // It is a solid object (Vegetation or Block).
-                        
-                        if (isReplaceable) {
-                             // Case 1: Vegetation/Snow (Soft Obstruction).
-                             // Always deconstruct these to "harvest" them (Silk Touch),
-                             // ensuring the player has the item for potential Undos.
-                             jobManager.registerDirectDeconstruct(target, bpState, level);
-                             historyRecords.add(new GhostHistoryManager.GhostRecord(target.immutable(), worldState, bpState));
-                             placedCount++;
+                if (toolMode == ToolMode.PLACE) {
+                    if (bpState != null && !bpState.isAir() && !worldState.equals(bpState)) {
+                        if (!worldState.isAir() && !worldState.canBeReplaced() && !(worldState.getBlock() instanceof GhostBlock)) {
+                            changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
+                            GhostJobManager.get(level).registerDirectDeconstruct(target, bpState, level);
                         } else {
-                             // Case 2: Hard Obstruction (Stone, Logs, Machines).
-                             // Only deconstruct if in Semi-Force (1) or Full-Force (2) mode.
-                             if (placementMode >= 1) { 
-                                jobManager.registerDirectDeconstruct(target, bpState, level);
-                                historyRecords.add(new GhostHistoryManager.GhostRecord(target.immutable(), worldState, bpState));
-                                placedCount++;
-                             }
-                        }
-                    } else {
-                        // Position is Clear (Air), Liquid, or existing Ghost.
-                        // Place construction ghost.
-                        level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
-                        if (level.getBlockEntity(target) instanceof GhostBlockEntity gbe) {
-                            gbe.setTargetState(bpState);
-                            gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
-                        }
-                        
-                        // History: If it was Fluid, record as AIR (Drones can't restore fluids).
-                        // If it was Air/Ghost, record as is.
-                        BlockState historyState = isFluid ? Blocks.AIR.defaultBlockState() : worldState;
-                        historyRecords.add(new GhostHistoryManager.GhostRecord(target.immutable(), historyState, bpState));
-                        placedCount++;
-                    }
-                }
-            }
-
-            // Full-Force Mode: Clear areas that should be air according to the blueprint
-            if (placementMode == 2) {
-                for (int x = 0; x < sizeX; x++) {
-                    for (int y = 0; y < sizeY; y++) {
-                        for (int z = 0; z < sizeZ; z++) {
-                            BlockPos rel = new BlockPos(x, y, z);
-                            if (!patternPositions.contains(rel)) {
-                                BlockPos target = currentOrigin.offset(rel);
-                                BlockState worldState = level.getBlockState(target);
-                                // If there is a non-replaceable obstruction where the blueprint says AIR
-                                if (!worldState.isAir() && !worldState.canBeReplaced() && !(worldState.getBlock() instanceof GhostBlock)) {
-                                    jobManager.registerDirectDeconstruct(target, Blocks.AIR.defaultBlockState(), level);
-                                    historyRecords.add(new GhostHistoryManager.GhostRecord(target.immutable(), worldState, Blocks.AIR.defaultBlockState()));
-                                    placedCount++;
-                                }
+                            if (worldState.getBlock() == ModBlocks.GHOST_BLOCK.get()) {
+                                if (level.getBlockEntity(target) instanceof GhostBlockEntity gbe && gbe.getTargetState().equals(bpState)) continue; 
+                            }
+                            changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
+                            level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
+                            if (level.getBlockEntity(target) instanceof GhostBlockEntity gbe) {
+                                gbe.setTargetState(bpState);
+                                gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                             }
                         }
                     }
+                } else if (toolMode == ToolMode.DECONSTRUCT || toolMode == ToolMode.CUT) {
+                     if (!worldState.isAir()) {
+                         GhostJobManager.get(level).registerDirectDeconstruct(target, Blocks.AIR.defaultBlockState(), level);
+                     }
                 }
             }
         }
-        
-        GhostHistoryManager.recordPlacement(player, historyRecords);
-        player.displayClientMessage(Component.literal("Placed " + placedCount + " jobs."), true);
+        GhostHistoryManager.recordAction(player, changes);
+    }
+
+    private void executeAreaAction(ServerLevel level, ServerPlayer player, ItemStack stack, BlockPos start, BlockPos end, ToolMode mode) {
+         BlockPos min = new BlockPos(Math.min(start.getX(), end.getX()), Math.min(start.getY(), end.getY()), Math.min(start.getZ(), end.getZ()));
+         BlockPos max = new BlockPos(Math.max(start.getX(), end.getX()), Math.max(start.getY(), end.getY()), Math.max(start.getZ(), end.getZ()));
+         
+         List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
+
+         if (mode == ToolMode.CUT) {
+             CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+             handleCopyLogic(tag, level, min, max);
+             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+             player.displayClientMessage(Component.literal("Cut to clipboard."), true);
+         }
+         
+         for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+             BlockState worldState = level.getBlockState(p);
+             if (!worldState.isAir()) {
+                 changes.add(new GhostHistoryManager.StateChange(p.immutable(), worldState, Blocks.AIR.defaultBlockState()));
+                 GhostJobManager.get(level).registerDirectDeconstruct(p, Blocks.AIR.defaultBlockState(), level);
+             }
+         }
+         GhostHistoryManager.recordAction(player, changes);
     }
 
     private void handleCopy(Level level, Player player, CompoundTag tag, BlockPos clickedPos) {
@@ -295,35 +279,31 @@ public class GhostPlacerItem extends Item {
             tag.putLong("Pos1", clickedPos.asLong());
             if (level.isClientSide) player.displayClientMessage(Component.literal("First position set."), true);
         } else {
-            if (level.isClientSide) return;
             BlockPos pos1 = BlockPos.of(tag.getLong("Pos1"));
             BlockPos min = new BlockPos(Math.min(pos1.getX(), clickedPos.getX()), Math.min(pos1.getY(), clickedPos.getY()), Math.min(pos1.getZ(), clickedPos.getZ()));
             BlockPos max = new BlockPos(Math.max(pos1.getX(), clickedPos.getX()), Math.max(pos1.getY(), clickedPos.getY()), Math.max(pos1.getZ(), clickedPos.getZ()));
             
-            ListTag patternList = new ListTag();
-            int realBlocksFound = 0;
-            
-            for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-                BlockState state = level.getBlockState(p);
-                if (!state.isAir()) {
-                    CompoundTag blockTag = new CompoundTag();
-                    blockTag.put("Rel", NbtUtils.writeBlockPos(p.subtract(min)));
-                    blockTag.put("State", NbtUtils.writeBlockState(state));
-                    patternList.add(blockTag);
-                    realBlocksFound++;
-                }
-            }
-            tag.put("Pattern", patternList);
-            tag.putInt("SizeX", max.getX() - min.getX() + 1);
-            tag.putInt("SizeY", max.getY() - min.getY() + 1);
-            tag.putInt("SizeZ", max.getZ() - min.getZ() + 1);
+            handleCopyLogic(tag, level, min, max);
+
             tag.remove("Pos1");
-            player.displayClientMessage(Component.literal("Copied " + realBlocksFound + " blocks."), false);
+            if (level.isClientSide) player.displayClientMessage(Component.literal("Structure Copied."), false);
         }
     }
 
-    private void setTag(ItemStack stack, CompoundTag tag) {
-        if (tag.isEmpty()) stack.remove(DataComponents.CUSTOM_DATA);
-        else stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    private void handleCopyLogic(CompoundTag tag, Level level, BlockPos min, BlockPos max) {
+        ListTag patternList = new ListTag();
+        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+            BlockState s = level.getBlockState(p);
+            if (!s.isAir()) {
+                CompoundTag bTag = new CompoundTag();
+                bTag.put("Rel", NbtUtils.writeBlockPos(p.subtract(min)));
+                bTag.put("State", NbtUtils.writeBlockState(s));
+                patternList.add(bTag);
+            }
+        }
+        tag.put("Pattern", patternList);
+        tag.putInt("SizeX", (max.getX() - min.getX()) + 1);
+        tag.putInt("SizeY", (max.getY() - min.getY()) + 1);
+        tag.putInt("SizeZ", (max.getZ() - min.getZ()) + 1);
     }
 }

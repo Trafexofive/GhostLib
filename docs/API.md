@@ -20,21 +20,31 @@ if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
 }
 ```
 
-### Direct Deconstruction
-To mark a solid block for removal (by a drone):
+## 2. The Blueprint System
+Custom items can extend `BlueprintItem` to provide pre-configured structure patterns.
+
 ```java
-BlockPos pos = new BlockPos(100, 64, 100);
-GhostJobManager.get(level).registerDirectDeconstruct(pos, Blocks.AIR.defaultBlockState(), level);
+public class MyBlueprint extends BlueprintItem {
+    public MyBlueprint() {
+        super(BlueprintType.CUSTOM, new Item.Properties());
+    }
+    
+    @Override
+    protected void setupPattern(ItemStack stack) {
+        // Populate "Pattern" NBT list with relative positions and states
+    }
+}
 ```
 
-## 2. Querying Job State
-You can check if a position is currently being worked on:
+## 3. Swarm Coordination
+Drone Ports interact with the `GhostJobManager` to find work.
+
 ```java
-UUID droneId = ...;
-boolean isBusy = GhostJobManager.get(level).isAssignedTo(pos, droneId);
+// Find nearest job for a port
+Job work = GhostJobManager.get(level).findNearestJob(portPos, radius);
 ```
 
-## 3. Custom Drone Behavior
+## 4. Custom Drone Behavior
 Drones are `PathfinderMob` entities. You can extend `DroneEntity` or apply custom NBT data to modify their speed or health.
 *   **Speed:** Controlled by `Attributes.MOVEMENT_SPEED`.
 *   **Flight:** Drones have `noPhysics = true` and `setNoGravity(true)`.

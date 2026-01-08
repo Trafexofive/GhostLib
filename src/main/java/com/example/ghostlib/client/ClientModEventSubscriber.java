@@ -39,6 +39,18 @@ import org.joml.Matrix4f;
 
 import java.util.Map;
 
+import com.example.ghostlib.client.renderer.entity.PortDroneRenderer;
+
+/**
+ * Handles client-side event subscriptions for GhostLib.
+ * <p>Responsibilities:</p>
+ * <ul>
+ *   <li><b>Renderer Registration:</b> Registers BlockEntity and Entity renderers.</li>
+ *   <li><b>Key Mapping:</b> Registers client-side keybinds.</li>
+ *   <li><b>Input Handling:</b> Intercepts mouse scrolling for tool mode switching.</li>
+ *   <li><b>Rendering:</b> Draws the holographic ghost previews, tiling grids, and deconstruction markers in the world.</li>
+ * </ul>
+ */
 @EventBusSubscriber(modid = GhostLib.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public class ClientModEventSubscriber {
 
@@ -46,6 +58,7 @@ public class ClientModEventSubscriber {
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(ModBlockEntities.GHOST_BLOCK_ENTITY.get(), com.example.ghostlib.client.renderer.GhostBlockRenderer::new);
         event.registerEntityRenderer(ModEntities.DRONE.get(), DroneRenderer::new);
+        event.registerEntityRenderer(ModEntities.PORT_DRONE.get(), PortDroneRenderer::new);
     }
 
     @SubscribeEvent
@@ -60,6 +73,38 @@ public class ClientModEventSubscriber {
 
     @EventBusSubscriber(modid = GhostLib.MODID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
     public static class GameBusEvents {
+        
+        /**
+         * Intercepts mouse scrolling to cycle tool modes (PLACE, DECONSTRUCT, CUT) when crouching.
+         */
+        @SubscribeEvent
+        public static void onMouseScroll(net.neoforged.neoforge.client.event.InputEvent.MouseScrollingEvent event) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && mc.player.isCrouching()) {
+                ItemStack stack = mc.player.getMainHandItem();
+                if (stack.getItem() instanceof com.example.ghostlib.item.GhostPlacerItem item) {
+                    event.setCanceled(true);
+                    com.example.ghostlib.item.GhostPlacerItem.ToolMode current = item.getMode(stack);
+                    int nextOrdinal = (current.ordinal() + (event.getScrollDeltaY() > 0 ? 1 : -1)) % com.example.ghostlib.item.GhostPlacerItem.ToolMode.values().length;
+                    if (nextOrdinal < 0) nextOrdinal += com.example.ghostlib.item.GhostPlacerItem.ToolMode.values().length;
+                    
+                    mc.getConnection().send(new com.example.ghostlib.network.payload.ServerboundToolModePacket(nextOrdinal));
+                    
+                    // Client-side prediction for responsiveness
+                    item.setMode(stack, nextOrdinal);
+                    mc.player.displayClientMessage(net.minecraft.network.chat.Component.literal("Tool Mode: " + com.example.ghostlib.item.GhostPlacerItem.ToolMode.values()[nextOrdinal].name()), true);
+                }
+            }
+        }
+
+        /**
+         * Renders the world overlays:
+         * <ul>
+         *   <li>Deconstruction boxes (Red wireframes) for active jobs.</li>
+         *   <li>Ghost Pattern Previews (Blue holograms) for the Ghost Placer tool.</li>
+         *   <li>Selection boxes for Cut/Deconstruct modes.</li>
+         * </ul>
+         */
         @SubscribeEvent
         public static void onRenderLevelStage(RenderLevelStageEvent event) {
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
@@ -76,8 +121,8 @@ public class ClientModEventSubscriber {
             if (!stack.is(ModItems.GHOST_PLACER.get())) stack = player.getOffhandItem();
             if (!stack.is(ModItems.GHOST_PLACER.get())) return;
             
+            com.example.ghostlib.item.GhostPlacerItem.ToolMode mode = ((com.example.ghostlib.item.GhostPlacerItem)stack.getItem()).getMode(stack);
             CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
-            if (!tag.contains("Pattern")) return;
 
             HitResult hit = player.pick(64.0D, 0.0F, false); 
             if (hit == null || hit.getType() != HitResult.Type.BLOCK) return;
@@ -88,14 +133,38 @@ public class ClientModEventSubscriber {
 
             poseStack.pushPose();
             poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-
             BlockPos lookPos = ((BlockHitResult)hit).getBlockPos();
 
-            if (ClientGhostState.isDragging) {
-                renderTiledPreview(mc, player, poseStack, bufferSource, tag, ClientGhostState.anchorPos, lookPos);
+            if (mode == com.example.ghostlib.item.GhostPlacerItem.ToolMode.PLACE) {
+                 if (tag.contains("Pattern")) {
+                    if (ClientGhostState.isDragging) {
+                        renderTiledPreview(mc, player, poseStack, bufferSource, tag, ClientGhostState.anchorPos, lookPos);
+                    } else {
+                        BlockPos origin = lookPos.relative(((BlockHitResult)hit).getDirection());
+                        renderPatternPreview(mc, player, poseStack, bufferSource, tag, origin, 1, player.getDirection());
+                    }
+                 }
             } else {
-                BlockPos origin = lookPos.relative(((BlockHitResult)hit).getDirection());
-                renderPatternPreview(mc, player, poseStack, bufferSource, tag, origin, 1, player.getDirection());
+                // Deconstruct / Cut Preview (Red Box)
+                BlockPos start = ClientGhostState.isDragging ? ClientGhostState.anchorPos : lookPos;
+                BlockPos end = lookPos;
+                if (start != null) {
+                    BlockPos min = new BlockPos(Math.min(start.getX(), end.getX()), Math.min(start.getY(), end.getY()), Math.min(start.getZ(), end.getZ()));
+                    BlockPos max = new BlockPos(Math.max(start.getX(), end.getX()), Math.max(start.getY(), end.getY()), Math.max(start.getZ(), end.getZ()));
+                    
+                    VertexConsumer lines = bufferSource.getBuffer(RenderType.lines());
+                    VertexConsumer tint = bufferSource.getBuffer(RenderType.translucent());
+                    
+                    // Render big box
+                    float s = 0.005f;
+                    net.minecraft.client.renderer.LevelRenderer.renderLineBox(poseStack, lines, 
+                        min.getX() - s, min.getY() - s, min.getZ() - s, 
+                        max.getX() + 1 + s, max.getY() + 1 + s, max.getZ() + 1 + s, 
+                        1.0f, 0.0f, 0.0f, 1.0f);
+                    
+                    // Fill volume slightly
+                    // (Optional: iterate blocks inside to check validity?)
+                }
             }
             
             poseStack.popPose();

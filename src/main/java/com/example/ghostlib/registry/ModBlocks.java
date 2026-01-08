@@ -3,6 +3,7 @@ package com.example.ghostlib.registry;
 import com.example.ghostlib.GhostLib;
 import com.example.ghostlib.block.GhostBlock;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.neoforged.bus.api.IEventBus;
@@ -20,6 +21,18 @@ public class ModBlocks {
                 .instabreak()
                 .replaceable()
                 .forceSolidOff()));
+
+    public static final DeferredBlock<Block> DRONE_PORT_CONTROLLER = BLOCKS.register("drone_port_controller",
+        () -> new com.example.ghostlib.block.DronePortControllerBlock(BlockBehaviour.Properties.of().strength(5.0f).noOcclusion()));
+
+    public static final DeferredBlock<Block> DRONE_PORT_MEMBER = BLOCKS.register("drone_port_member",
+        () -> new com.example.ghostlib.block.DronePortMemberBlock(BlockBehaviour.Properties.of().strength(5.0f)));
+
+    public static final DeferredBlock<Block> MATERIAL_STORAGE = BLOCKS.register("material_storage",
+            () -> new com.example.ghostlib.block.MaterialStorageBlock(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(3.0f).sound(SoundType.METAL)));
+
+    public static final DeferredBlock<Block> ELECTRIC_FURNACE_CONTROLLER = BLOCKS.register("electric_furnace_controller",
+            () -> new com.example.ghostlib.block.ElectricFurnaceControllerBlock(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(3.0f).sound(SoundType.METAL)));
 
     public static void register(IEventBus eventBus) {
         BLOCKS.register(eventBus);

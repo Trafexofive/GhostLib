@@ -8,4 +8,6 @@ pluginManagement {
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.5.0'
 }
-rootProject.name = 'GhostLib'
+rootProject.name = 'ghostlib'
+include ':VoltLink'
+project(':VoltLink').projectDir = new File(settingsDir, '../VoltLink')

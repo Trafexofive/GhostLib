@@ -1,0 +1,7 @@
+# Drone Port Configuration
+
+port:
+  energy_capacity: 1000000 # Maximum FE stored
+  energy_per_spawn: 1000   # FE cost to deploy one drone
+  max_active_drones: 16    # Maximum drones allowed in the air per port
+  activation_range: 64     # Radius to scan for ghost jobs

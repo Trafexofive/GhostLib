@@ -14,6 +14,10 @@ repositories {
     mavenLocal()
 }
 
+dependencies {
+    implementation project(':VoltLink')
+}
+
 base {
     archivesName = project.mod_id
 }

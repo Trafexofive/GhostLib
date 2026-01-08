@@ -20,6 +20,12 @@ public class ModCreativeTabs {
                     .displayItems((params, output) -> {
                         output.accept(ModItems.GHOST_PLACER.get());
                         output.accept(ModItems.DRONE_SPAWN_EGG.get());
+                        output.accept(ModItems.DRONE_PORT_SPAWNER.get());
+                        output.accept(ModItems.DRONE_PORT_CONTROLLER_ITEM.get());
+                        output.accept(ModItems.DRONE_PORT_MEMBER_ITEM.get());
+                        output.accept(ModItems.MATERIAL_STORAGE.get());
+                        output.accept(ModItems.ELECTRIC_FURNACE_CONTROLLER.get());
+                        output.accept(ModItems.BLUEPRINT_FURNACE.get());
                     })
                     .build());
 

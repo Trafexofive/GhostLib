@@ -13,14 +13,20 @@ import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import org.lwjgl.glfw.GLFW;
 
+import com.example.ghostlib.util.GhostJobManager;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.HitResult;
+
 public class Keybinds {
     public static final KeyMapping UNDO_KEY = new KeyMapping("key.ghostlib.undo", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, "key.categories.ghostlib");
     public static final KeyMapping REDO_KEY = new KeyMapping("key.ghostlib.redo", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Y, "key.categories.ghostlib");
+    public static final KeyMapping CUT_KEY = new KeyMapping("key.ghostlib.cut", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_X, "key.categories.ghostlib");
 
     @SubscribeEvent
     public static void registerKeys(RegisterKeyMappingsEvent event) {
         event.register(UNDO_KEY);
         event.register(REDO_KEY);
+        event.register(CUT_KEY);
     }
 
     @EventBusSubscriber(modid = GhostLib.MODID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
@@ -38,6 +44,14 @@ public class Keybinds {
                     Minecraft.getInstance().getConnection().send(new ServerboundUndoPacket());
                 } else if (REDO_KEY.isActiveAndMatches(InputConstants.getKey(event.getKey(), event.getScanCode()))) {
                     Minecraft.getInstance().getConnection().send(new ServerboundRedoPacket());
+                } else if (CUT_KEY.isActiveAndMatches(InputConstants.getKey(event.getKey(), event.getScanCode()))) {
+                    // Trigger Deconstruction on looked-at block
+                    var hit = Minecraft.getInstance().hitResult;
+                    if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
+                        net.minecraft.world.phys.BlockHitResult blockHit = (net.minecraft.world.phys.BlockHitResult) hit;
+                        // Use the PlaceGhosts packet with mode 2 (Full Force) to clear
+                        Minecraft.getInstance().getConnection().send(new com.example.ghostlib.network.payload.ServerboundPlaceGhostsPacket(blockHit.getBlockPos(), blockHit.getBlockPos(), 2));
+                    }
                 }
             }
         }

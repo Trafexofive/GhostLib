@@ -8,12 +8,12 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.MobRenderer;
 import net.minecraft.resources.ResourceLocation;
 
-public class DroneRenderer extends MobRenderer<DroneEntity, DroneModel> {
+public class DroneRenderer extends MobRenderer<DroneEntity, DroneModel<DroneEntity>> {
     public static final ModelLayerLocation DRONE_LAYER = new ModelLayerLocation(ResourceLocation.fromNamespaceAndPath(GhostLib.MODID, "drone"), "main");
     private static final ResourceLocation DRONE_TEXTURE = ResourceLocation.fromNamespaceAndPath(GhostLib.MODID, "textures/entity/drone.png");
 
     public DroneRenderer(EntityRendererProvider.Context context) {
-        super(context, new DroneModel(context.bakeLayer(DRONE_LAYER)), 0.5f);
+        super(context, new DroneModel<>(context.bakeLayer(DRONE_LAYER)), 0.5f);
     }
 
     @Override

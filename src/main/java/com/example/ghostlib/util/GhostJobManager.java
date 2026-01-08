@@ -152,6 +152,35 @@ public class GhostJobManager {
      * Attempts to find a job for a drone near its current position.
      * Uses a ring-based search pattern expanding outward up to 7 chunks.
      */
+    public boolean hasAvailableJob(BlockPos center, int radius) {
+        int cx = SectionPos.blockToSectionCoord(center.getX());
+        int cz = SectionPos.blockToSectionCoord(center.getZ());
+        int chunkRadius = (radius >> 4) + 1;
+
+        for (int r = 0; r <= chunkRadius; r++) {
+            for (int x = cx - r; x <= cx + r; x++) {
+                for (int z = cz - r; z <= cz + r; z++) {
+                    if (r > 0 && Math.abs(x - cx) < r && Math.abs(z - cz) < r) continue;
+                    long key = ChunkPos.asLong(x, z);
+
+                    // Check Deconstruction
+                    if (directDeconstructJobs.containsKey(key)) {
+                        for (BlockPos p : directDeconstructJobs.get(key).keySet()) {
+                            if (!assignedPositions.containsKey(p)) return true;
+                        }
+                    }
+                    // Check Construction
+                    if (constructionJobs.containsKey(key)) {
+                        for (BlockPos p : constructionJobs.get(key).keySet()) {
+                            if (!assignedPositions.containsKey(p)) return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     public Job requestJob(BlockPos dronePos, UUID droneId, boolean canBuild) {
         int cx = SectionPos.blockToSectionCoord(dronePos.getX());
         int cz = SectionPos.blockToSectionCoord(dronePos.getZ());
@@ -243,8 +272,8 @@ public class GhostJobManager {
             dirty = false;
         }
 
-        // Periodically attempt to re-queue hibernating jobs.
-        if (level.getGameTime() % 100 == 0) {
+        // Wake up hibernating jobs every 10 seconds (200 ticks)
+        if (level.getGameTime() % 200 == 0) {
             wakeUpHibernatingJobs(level);
         }
     }
@@ -284,40 +313,9 @@ public class GhostJobManager {
         net.neoforged.neoforge.network.PacketDistributor.sendToAllPlayers(new com.example.ghostlib.network.payload.S2CSyncDeconstructionPacket(active));
     }
 
-    private void wakeUpHibernatingJobs(Level level) {
-        for (Map.Entry<Long, Map<BlockPos, BlockState>> entry : hibernatingJobs.entrySet()) {
-            long key = entry.getKey();
-            Map<BlockPos, BlockState> jobs = entry.getValue();
-            if (jobs.isEmpty()) continue;
-
-            // Move all hibernating jobs in this chunk to construction queue
-            // We use a copy to avoid concurrent modification exceptions if needed, but ConcurrentHashMap is safe for iteration
-            for (Map.Entry<BlockPos, BlockState> job : jobs.entrySet()) {
-                BlockPos pos = job.getKey();
-                BlockState target = job.getValue();
-                
-                // Update the BlockEntity state to UNASSIGNED (Deep Blue)
-                if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
-                    gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
-                } else {
-                    // If the BE is gone, just register it directly (fallback) or remove it?
-                    // If BE is gone, the job is invalid.
-                    removeFromAllMaps(pos, true);
-                }
-            }
-        }
-    }
-
-    public void syncToClients(Level level) {
-        if (level.isClientSide) return;
-        Map<BlockPos, Boolean> active = new HashMap<>();
-        for (Map<BlockPos, BlockState> map : directDeconstructJobs.values()) {
-            for (BlockPos p : map.keySet()) active.put(p, true);
-        }
-        for (Set<BlockPos> set : ghostRemovalJobs.values()) {
-            synchronized (set) { for (BlockPos p : set) active.put(p, true); }
-        }
-        net.neoforged.neoforge.network.PacketDistributor.sendToAllPlayers(new com.example.ghostlib.network.payload.S2CSyncDeconstructionPacket(active));
+    public boolean isDeconstructAt(BlockPos pos) {
+        long key = ChunkPos.asLong(pos);
+        return directDeconstructJobs.containsKey(key) && directDeconstructJobs.get(key).containsKey(pos);
     }
 
     public Map<Long, Map<BlockPos, BlockState>> getDirectDeconstructJobs() { return directDeconstructJobs; }

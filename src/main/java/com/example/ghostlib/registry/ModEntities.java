@@ -9,6 +9,8 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import com.example.ghostlib.entity.PortDroneEntity;
+
 public class ModEntities {
     public static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(BuiltInRegistries.ENTITY_TYPE, GhostLib.MODID);
 
@@ -16,6 +18,11 @@ public class ModEntities {
             () -> EntityType.Builder.of(DroneEntity::new, MobCategory.MISC)
                     .sized(0.5f, 0.5f)
                     .build("drone"));
+
+    public static final DeferredHolder<EntityType<?>, EntityType<PortDroneEntity>> PORT_DRONE = ENTITIES.register("port_drone",
+            () -> EntityType.Builder.of(PortDroneEntity::new, MobCategory.MISC)
+                    .sized(0.5f, 0.5f)
+                    .build("port_drone"));
     
     public static void register(IEventBus eventBus) {
         ENTITIES.register(eventBus);

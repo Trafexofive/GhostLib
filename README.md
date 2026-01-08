@@ -8,49 +8,40 @@ GhostLib is a library and core engine for Minecraft 1.21.1 (NeoForge) that imple
 ### 1. GhostJobManager (`com.example.ghostlib.util.GhostJobManager`)
 The "Brain" of the operation. This singleton (per level) manages all active construction and deconstruction tasks.
 *   **Spatial Partitioning:** Jobs are indexed by Chunk Coordinate (`long key`) for O(1) retrieval.
-*   **Queues:**
-    *   `constructionJobs`: Valid placement jobs waiting for a drone.
-    *   `ghostRemovalJobs`: Jobs to remove ghost markers.
-    *   `directDeconstructJobs`: Jobs to remove physical blocks (solid obstructions).
-    *   `hibernatingJobs`: Jobs that failed item retrieval (Missing Items). They wake up every 5 seconds to retry.
-*   **Atomic Assignment:** Uses an `assignedPositions` map to lock specific block positions to specific drone UUIDs, preventing race conditions.
-*   **Network Optimization:** Uses a `dirty` flag to only sync deconstruction overlays to clients when changes occur, rather than every tick.
+*   **Persistent Logic:** Jobs and states are saved via `SavedData` to survive world restarts.
+*   **Queues:** Manages `constructionJobs`, `ghostRemovalJobs`, `directDeconstructJobs`, and `hibernatingJobs` (for missing items).
 
-### 2. DroneEntity (`com.example.ghostlib.entity.DroneEntity`)
-The worker unit. A `PathfinderMob` with custom AI logic (no standard goals).
-*   **Finite State Machine (FSM):**
-    *   `IDLE`: Hovering, looking for work.
-    *   `FINDING_JOB`: Querying the `GhostJobManager` based on spatial proximity (rings search).
-    *   `TRAVELING_FETCH`: Moving to the player to take items from inventory.
-    *   `TRAVELING_BUILD`: Moving to the ghost to place the block.
-    *   `TRAVELING_CLEAR`: Moving to a site to break a block (harvest).
-    *   `DUMPING_ITEMS`: Returning harvested items to the player.
-*   **Logic:**
-    *   **Data-Race Prevention:** Re-checks item availability immediately before taking from player inventory.
-    *   **Obstruction Handling:** If a block (e.g., Gravel) falls into the build site *after* the job started, the drone detects it upon arrival, cancels the build, and registers a `directDeconstruct` job instead.
+### 2. Drone Swarm (`com.example.ghostlib.entity`)
+Drones are custom AI entities that handle the physical labor.
+*   **Player-Owned Drones:** Follow the player and fetch items from their inventory.
+*   **Port-Owned Drones (`PortDroneEntity`):** Reside in a **Drone Port**. They fetch items from nearby containers and return home when idle or low on power.
+*   **Finite State Machine (FSM):** Drones cycle through states like `FINDING_JOB`, `TRAVELING_FETCH`, `TRAVELING_BUILD`, and `DUMPING_ITEMS`.
 
-### 3. GhostBlockEntity (`com.example.ghostlib.block.entity.GhostBlockEntity`)
-The "State Holder". Every blue ghost block is a TileEntity that tracks its own lifecycle.
-*   **States:**
-    1.  `UNASSIGNED` (Deep Blue): Waiting for a drone.
-    2.  `ASSIGNED` (Light Blue): Drone is en route.
-    3.  `FETCHING` (Dark Blue): Drone is getting items.
-    4.  `INCOMING` (Yellow): Drone has item, delivering.
-    5.  `TO_REMOVE` (Red Wireframe): Marked for deletion.
-    6.  `REMOVING` (Red Wireframe): Drone is currently breaking it.
-    7.  `MISSING_ITEMS`: Drone couldn't find items (hibernating).
-*   **Persistence:** Uses `onLoad()` to re-register itself with the `GhostJobManager` on server start/chunk load, ensuring no jobs are lost.
+### 3. Drone Port & Multiblocks
+The **Drone Port** is a 3x3 multiblock structure that serves as a hangar and charging station for drones.
+*   **Autonomous Deployment:** Automatically spawns drones when jobs are detected within range.
+*   **Energy Integration:** Consumes VoltLink Flux power to deploy and maintain drones.
+*   **Inventory Storage:** Holds a stack of Drone Eggs and provides a workspace for swarm coordination.
 
-### 4. GhostHistoryManager (`com.example.ghostlib.history.GhostHistoryManager`)
-Manages Undo/Redo functionality with atomic transactions.
-*   **Atomic Batches:** Records placements as a `List<GhostRecord>` so an entire wall is undone in one click.
-*   **Drone-Driven Undo:**
-    *   Undoing a **Ghost** -> Instant removal.
-    *   Undoing a **Solid Block** -> Registers a `DirectDeconstruct` job. Drones must fly out and remove the blocks physically.
+### 4. Blueprint System
+Blueprints allow for the projection of complex structures into ghost blocks.
+*   **Electric Furnace Blueprint:** A starter item that projects a 3x3 base structure.
+*   **Drag-to-Place:** Uses the same high-fidelity preview system as the standard Placer.
+*   **Auto-Patterning:** Items can be configured to automatically generate patterns when held.
+
+## VoltLink Integration
+GhostLib is designed to work seamlessly with **VoltLink** for power management.
+*   **Wireless Charging:** Drone Ports can draw power wirelessly from **Electric Floors(should be electric wires)** connected to the grid.
+*   **Grid Demand:** Ports request power from the grid only when needed (e.g., during deployment).
+
+## Configuration (`config/*.yml`)
+GhostLib uses YAML-based configuration for easy tuning:
+*   `drone.yml`: Health, speed, and interaction ranges.
+*   `drone_port.yml`: Energy capacity, spawn costs, and max active drones.
 
 ## Visuals (`GhostBlockRenderer`)
 *   **Standard Ghosts:** Rendered as translucent cubes with colors corresponding to their state (Blue/Yellow).
-*   **Deconstruction:** Rendered as a "Red Wireframe + Translucent Red Tint" overlay on top of the existing solid block. This persists during the `TO_REMOVE` and `REMOVING` states.
+*   **Deconstruction:** Rendered as a "Red Wireframe + Translucent Red Tint" overlay.
 
 ## Key Logic Flows
 

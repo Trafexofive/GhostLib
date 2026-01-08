@@ -1,32 +1,39 @@
 # Technical Architecture: GhostLib
 
-## 1. Drone AI Lifecycle
-Drones do not use the standard Minecraft `GoalSelector` system. Instead, they use a custom Finite State Machine (FSM) implemented in `DroneEntity#tick()`. This allows for high-precision movement and atomic task execution.
+## 1. Drone AI & Swarm Management
+Drones utilize a custom Finite State Machine (FSM) for high-precision physical interaction.
 
-### Smooth Movement Logic
-Drones use `moveSmoothlyTo(Vec3 target, double speed)`. 
-*   **Approach Damping:** As a drone approaches within 2.0 blocks of its target, its speed is linearly scaled down based on distance. This prevents "jittering" or orbiting the target and allows for exact landings at the build site.
-*   **Linger Period:** Upon completing a task, drones enter a 0.5s (10 tick) `lingerTicks` phase where they decelerate to zero and wait. This provides visual weight and prevents the drones from looking too "robotic" or jittery during high-speed transitions.
+### Swarm Varieties
+*   **Player Drones:** Primary focus is player support. They use `Player` inventory as their source/sink.
+*   **Port Drones:** Autonomous factory workers. They use a **Home Position** (Drone Port) and search for nearby containers (`IItemHandler`) to fulfill construction needs.
 
-## 2. The Networking Protocol
-GhostLib minimizes network traffic by strictly separating "World State" from "Renderer State".
+### Smooth Movement
+*   **Approach Damping:** Scaled deceleration within 2.0 blocks of target to ensure exact landings.
+*   **Home Return:** Port drones monitor their "Idle Ticks". After 30 seconds of inactivity, they automatically return to their home port and dock as items.
 
-### Ghost Syncing
-Standard ghost colors (Blue/Yellow) are synced via standard BlockEntity `getUpdatePacket`. This only happens when the ghost's internal state changes.
+## 2. Multiblock Systems
+GhostLib implements a lightweight Multiblock API for industrial machines.
 
-### Deconstruction Overlays
-Because deconstruction jobs are "Global" tasks that don't always have a BlockEntity (e.g., when a drone is clearing a solid Stone block), we use a custom packet: `S2CSyncDeconstructionPacket`.
-*   **Trigger:** The `GhostJobManager` tracks a `dirty` flag. It only broadcasts the global list of active deconstruction sites when a job is added or removed.
-*   **Render:** The client caches this list and renders the Red Wireframe overlay for every position in the list.
+### Drone Port
+*   **Controller-Member Pattern:** A central `DronePortController` manages 8 `DronePortMember` blocks.
+*   **Structural Validation:** Logic checks for a valid 3x3 layout before enabling deployment features.
+*   **Energy Consumption:** Integrated with VoltLink to require Flux potential for drone manufacturing and dispatch.
 
-## 3. Atomic Consistency (Undo/Redo)
-The `GhostHistoryManager` ensures that world changes are always reversible and stable.
+## 3. The Blueprint Engine
+The Blueprint system allows for arbitrary structure projection.
 
-*   **Snapshotting:** When a player drags a blueprint, the world state *before* any changes is captured in a `GhostRecord`.
-*   **Physical Restoration:** Undoing a build doesn't just delete the blocks. It generates a `DIRECT_DECONSTRUCT` job. A drone must physically arrive, break the block, and return the item to the player.
-*   **Replaceable Logic:** Blocks like Grass or Snow are treated as AIR in the history snapshots to prevent "Vegetation Ghosts" that require the player to replant flowers to clear an undo.
+*   **Pattern NBT:** Structures are stored as a list of relative `BlockPos` and `BlockState` in the item's `CUSTOM_DATA`.
+*   **Projection:** Holding a Blueprint item triggers a client-side rendering of the structure using `GhostPlacerItemRenderer`.
+*   **Persistence:** Once placed, Blueprints are converted into `GhostBlock` entities that retain the target state until built.
 
-## 4. Spatial Partitioning
-To handle hundreds of jobs across thousands of blocks, `GhostJobManager` partitions tasks by Chunk (`ChunkPos.asLong`).
-*   **Lookup:** `requestJob` only searches a 7x7 chunk area around the drone.
-*   **Complexity:** Searching for a job is $O(R^2)$ where R is the chunk radius, rather than $O(N)$ where N is the total number of jobs. This ensures the system remains fast even with massive factory builds.
+## 4. Configuration Layer
+A flexible configuration system handles mod tuning without code changes.
+
+*   **YAML Mapping:** `GhostLibConfig` reads from `config/*.yml`.
+*   **Dynamic Defaults:** Default resources are extracted from the JAR if the config folder is missing.
+*   **Values:** Covers everything from `DRONE_MAX_HEALTH` to `PORT_ACTIVATION_RANGE`.
+
+## 5. Networking & Performance
+*   **Spatial Partitioning:** `GhostJobManager` partitions tasks by Chunk (`long key`). Search complexity is O(R²) where R is search radius.
+*   **Lazy Syncing:** Deconstruction markers use a `dirty` flag to minimize packet overhead.
+*   **Atomic Transactions:** `GhostHistoryManager` groups placements into batches for stable Undos.
