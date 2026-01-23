@@ -8,7 +8,7 @@ public class GhostLibConfig {
     // Port Config
     public static int PORT_ENERGY_CAPACITY = 1000000;
     public static int PORT_ENERGY_PER_SPAWN = 1000;
-    public static int PORT_MAX_ACTIVE_DRONES = 16;
+    public static int PORT_MAX_ACTIVE_DRONES = 32;
     public static int PORT_ACTIVATION_RANGE = 64;
 
     // Drone Config
@@ -18,6 +18,9 @@ public class GhostLibConfig {
     public static int DRONE_SEARCH_RANGE_H = 32;
     public static int DRONE_SEARCH_RANGE_V = 16;
     public static boolean RENDER_DRONE_BEAMS = true;
+    
+    // UX Config
+    public static boolean EXIT_MODE_AFTER_PLACE = true;
 
     public static void load() {
         loadYaml("drone_port.yml", "port");
@@ -41,6 +44,8 @@ public class GhostLibConfig {
                       search_range_vertical: 16
                     visuals:
                       render_beams: true # Aesthetic laser beams on place/break
+                    ux:
+                      exit_mode_after_place: true # Automatically exit selection mode after confirming action
                     """;
                 } else {
                     content = """
@@ -89,6 +94,7 @@ public class GhostLibConfig {
                 case "logic.search_range_horizontal" -> DRONE_SEARCH_RANGE_H = Integer.parseInt(value);
                 case "logic.search_range_vertical" -> DRONE_SEARCH_RANGE_V = Integer.parseInt(value);
                 case "visuals.render_beams" -> RENDER_DRONE_BEAMS = Boolean.parseBoolean(value);
+                case "ux.exit_mode_after_place" -> EXIT_MODE_AFTER_PLACE = Boolean.parseBoolean(value);
             }
         } catch (Exception e) {}
     }

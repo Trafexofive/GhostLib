@@ -44,10 +44,19 @@ public record S2CSyncDeconstructionPacket(Map<BlockPos, Boolean> activeJobs) imp
         context.enqueueWork(() -> {
             net.minecraft.world.level.Level level = context.player().level();
             GhostJobManager manager = GhostJobManager.get(level);
-            // Clear current and repopulate with dummy target states just for client rendering
-            manager.getDirectDeconstructJobs().clear();
+            Map<Long, Map<BlockPos, BlockState>> clientJobs = manager.getDirectDeconstructJobs();
+            
+            // 1. Remove jobs not in packet
+            clientJobs.values().forEach(map -> map.keySet().removeIf(pos -> !packet.activeJobs.containsKey(pos)));
+            clientJobs.values().removeIf(Map::isEmpty);
+
+            // 2. Add/Update jobs from packet
             for (Map.Entry<BlockPos, Boolean> entry : packet.activeJobs().entrySet()) {
-                manager.registerDirectDeconstruct(entry.getKey(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), level);
+                // If it exists, we assume it's valid. If not, register it.
+                // We use AIR as dummy state because packet only sends Boolean (Active).
+                if (!manager.isDeconstructAt(entry.getKey())) {
+                    manager.registerDirectDeconstruct(entry.getKey(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), level);
+                }
             }
         });
     }

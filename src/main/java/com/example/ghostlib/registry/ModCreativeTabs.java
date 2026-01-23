@@ -16,16 +16,14 @@ public class ModCreativeTabs {
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> GHOSTLIB_TAB = CREATIVE_MODE_TABS.register("ghostlib_tab",
             () -> CreativeModeTab.builder()
                     .title(Component.literal("GhostLib"))
-                    .icon(() -> new ItemStack(ModItems.GHOST_PLACER.get()))
+                    .icon(() -> new ItemStack(ModItems.DRONE_SPAWN_EGG.get()))
                     .displayItems((params, output) -> {
-                        output.accept(ModItems.GHOST_PLACER.get());
                         output.accept(ModItems.DRONE_SPAWN_EGG.get());
                         output.accept(ModItems.DRONE_PORT_SPAWNER.get());
                         output.accept(ModItems.DRONE_PORT_CONTROLLER_ITEM.get());
                         output.accept(ModItems.DRONE_PORT_MEMBER_ITEM.get());
                         output.accept(ModItems.MATERIAL_STORAGE.get());
-                        output.accept(ModItems.ELECTRIC_FURNACE_CONTROLLER.get());
-                        output.accept(ModItems.BLUEPRINT_FURNACE.get());
+                        output.accept(ModItems.BLUEPRINT.get());
                     })
                     .build());
 

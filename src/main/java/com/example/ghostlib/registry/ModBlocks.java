@@ -31,9 +31,6 @@ public class ModBlocks {
     public static final DeferredBlock<Block> MATERIAL_STORAGE = BLOCKS.register("material_storage",
             () -> new com.example.ghostlib.block.MaterialStorageBlock(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(3.0f).sound(SoundType.METAL)));
 
-    public static final DeferredBlock<Block> ELECTRIC_FURNACE_CONTROLLER = BLOCKS.register("electric_furnace_controller",
-            () -> new com.example.ghostlib.block.ElectricFurnaceControllerBlock(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(3.0f).sound(SoundType.METAL)));
-
     public static void register(IEventBus eventBus) {
         BLOCKS.register(eventBus);
     }

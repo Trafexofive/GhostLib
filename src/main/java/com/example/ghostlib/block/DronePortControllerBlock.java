@@ -18,8 +18,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
-import com.example.voltlink.network.GridManager;
-
 public class DronePortControllerBlock extends BaseEntityBlock {
     public static final com.mojang.serialization.MapCodec<DronePortControllerBlock> CODEC = simpleCodec(DronePortControllerBlock::new);
 
@@ -30,18 +28,10 @@ public class DronePortControllerBlock extends BaseEntityBlock {
     @Override
     public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean isMoving) {
         super.onPlace(state, level, pos, oldState, isMoving);
-        if (!level.isClientSide) {
-            GridManager.get(level).addNode(pos, level);
-        }
     }
 
     @Override
     public void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean isMoving) {
-        if (!state.is(newState.getBlock())) {
-            if (!level.isClientSide) {
-                GridManager.get(level).removeNode(pos, level);
-            }
-        }
         super.onRemove(state, level, pos, newState, isMoving);
     }
 

@@ -26,45 +26,32 @@ import net.minecraft.world.phys.Vec3;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Represents a construction drone entity that autonomously builds and deconstructs structures.
- * 
- * <p>Behavior:</p>
- * <ul>
- *   <li><b>AI:</b> Uses a Finite State Machine (FSM) to cycle between Idle, Fetching, Building, and Dumping.</li>
- *   <li><b>Logistics:</b> Interacts with the global GhostJobManager to find tasks.</li>
- *   <li><b>Power:</b> Consumes energy to fly and work. Recharges wirelessly from VoltLink grids.</li>
- *   <li><b>Harvesting:</b> Uses Silk Touch logic to ensure blocks are harvested intact.</li>
- * </ul>
- */
 public class DroneEntity extends PathfinderMob {
     
-    /** States for the drone's AI FSM. */
     public enum DroneState {
         IDLE, 
         FINDING_JOB, 
-        TRAVELING_CLEAR, // Moving to remove a block
-        TRAVELING_FETCH, // Moving to pick up items
-        TRAVELING_BUILD, // Moving to place a block
-        DUMPING_ITEMS    // Returning excess items to player/port
+        TRAVELING_CLEAR, 
+        TRAVELING_FETCH, 
+        TRAVELING_BUILD, 
+        DUMPING_ITEMS
     }
 
     private DroneState droneState = DroneState.IDLE;
     private GhostJobManager.Job currentJob = null;
-    private BlockPos homePos = null; // null means Player-owned
+    private BlockPos homePos = null;
     private final SimpleContainer inventory = new SimpleContainer(9); 
     
-    // Energy System
     private int energy = 10000;
     private static final int MAX_ENERGY = 10000;
-    private static final int FLY_COST = 1;      // Per tick
-    private static final int WORK_COST = 50;    // Per block built/broken
+    private static final int FLY_COST = 1;
+    private static final int WORK_COST = 50;
     private boolean lowPowerMode = false;
 
     private int waitTicks = 0;
     private int idleTicks = 0;
     private int lingerTicks = 0; 
-    private static final int MAX_IDLE_TICKS = 600; 
+    private static final int MAX_IDLE_TICKS = 100;
 
     public DroneEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -88,20 +75,13 @@ public class DroneEntity extends PathfinderMob {
         super.tick();
         if (this.level().isClientSide) return;
 
-        // 1. Energy Consumption
         consumeEnergy();
-
-        // 2. Proximity Recharging (The "Leach" Logic)
-        if (level().getGameTime() % 10 == 0) {
-            tryRechargeFromGrid();
-        }
 
         if (waitTicks > 0) {
             waitTicks--;
             return;
         }
 
-        // Integrity check: Ensure job wasn't stolen or deleted
         if (currentJob != null && droneState != DroneState.IDLE && droneState != DroneState.DUMPING_ITEMS) {
             if (!GhostJobManager.get(level()).isAssignedTo(currentJob.pos(), this.getUUID())) {
                 this.currentJob = null;
@@ -130,32 +110,19 @@ public class DroneEntity extends PathfinderMob {
         }
     }
 
-    private void tryRechargeFromGrid() {
-        if (energy >= MAX_ENERGY) return;
-
-        BlockPos pos = this.blockPosition();
-        // Since we are in a composite project, we can access VoltLink classes directly if dependency is correct.
-        // If not, we'd use capability lookup or block checks.
-        
-        com.example.voltlink.network.GridManager grid = com.example.voltlink.network.GridManager.get(level());
-        List<BlockPos> nodes = grid.findNearbyNodes(pos, 5);
-        
-        if (!nodes.isEmpty()) {
-            com.example.voltlink.network.GridManager.PowerIsland island = grid.getIsland(nodes.get(0));
-            if (island != null && island.potential > 0.1f) {
-                int amount = Math.min(500, MAX_ENERGY - energy);
-                energy += amount;
-                
-                if (level() instanceof ServerLevel sl) {
-                    sl.sendParticles(net.minecraft.core.particles.ParticleTypes.ELECTRIC_SPARK, 
-                        getX(), getY(), getZ(), 3, 0.1, 0.1, 0.1, 0.05);
+    private void handleIdle() {
+        if (!isInventoryEmpty()) {
+            GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), false);
+            if (job != null && job.type() == GhostJobManager.JobType.CONSTRUCTION) {
+                ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
+                if (hasItemInInventory(required)) {
+                    this.droneState = DroneState.FINDING_JOB;
+                    return;
                 }
             }
+            this.droneState = DroneState.DUMPING_ITEMS; 
+            return; 
         }
-    }
-
-    private void handleIdle() {
-        if (!isInventoryEmpty()) { this.droneState = DroneState.DUMPING_ITEMS; return; }
 
         if (lingerTicks > 0) {
             lingerTicks--;
@@ -178,8 +145,6 @@ public class DroneEntity extends PathfinderMob {
     }
 
     private void handleFindingJob() {
-        if (!hasSpace()) { this.droneState = DroneState.DUMPING_ITEMS; return; }
-
         GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), hasSpace());
         if (job != null) {
             this.currentJob = job;
@@ -196,6 +161,14 @@ public class DroneEntity extends PathfinderMob {
                     }
                     return;
                 }
+                
+                if (!hasSpace()) {
+                    this.droneState = DroneState.DUMPING_ITEMS;
+                    GhostJobManager.get(level()).releaseJob(job.pos(), this.getUUID());
+                    this.currentJob = null;
+                    return;
+                }
+
                 if (findNearbyContainerWithItem(required) != null) {
                     this.droneState = DroneState.TRAVELING_FETCH;
                     if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
@@ -238,10 +211,8 @@ public class DroneEntity extends PathfinderMob {
         moveSmoothlyTo(currentJob.pos().getCenter(), 0.6);
         if (this.position().distanceTo(currentJob.pos().getCenter()) < com.example.ghostlib.config.GhostLibConfig.DRONE_INTERACTION_RANGE / 8.0) {
             BlockPos pos = currentJob.pos();
-            
-            // Visual Beam
             if (com.example.ghostlib.config.GhostLibConfig.RENDER_DRONE_BEAMS) {
-                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 1.0f, 0.2f, 0.2f); // Red beam for break
+                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 1.0f, 0.2f, 0.2f);
             }
 
             BlockState existing = level().getBlockState(pos);
@@ -269,18 +240,12 @@ public class DroneEntity extends PathfinderMob {
         }
     }
 
-    /**
-     * Harvests a block using "Silk Touch" logic (Pick Block).
-     * Ensures NBT data and exact item representation are preserved.
-     */
     private void harvest(BlockPos pos, BlockState state) {
         if (level() instanceof ServerLevel sl) {
-            // Use Pick Block logic to get the exact item representation
             BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
             ItemStack item = state.getCloneItemStack(hitResult, level(), pos, null);
             
             if (item.isEmpty()) {
-                // Fallback to Silk Touch drops if pick block fails (e.g. some modded blocks)
                 ItemStack tool = new ItemStack(net.minecraft.world.item.Items.DIAMOND_PICKAXE);
                 tool.enchant(sl.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT).getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
 
@@ -295,7 +260,6 @@ public class DroneEntity extends PathfinderMob {
                     if (!remainder.isEmpty()) Block.popResource(level(), pos, remainder);
                 }
             } else {
-                // getCloneItemStack should handle NBT for things like chests.
                 ItemStack remainder = this.inventory.addItem(item);
                 if (!remainder.isEmpty()) Block.popResource(level(), pos, remainder);
             }
@@ -327,7 +291,7 @@ public class DroneEntity extends PathfinderMob {
             if (slot != -1) {
                 ItemStack stackInSlot = player.getInventory().getItem(slot);
                 if (!stackInSlot.isEmpty() && stackInSlot.is(required.getItem())) {
-                     ItemStack taken = stackInSlot.split(1);
+                     ItemStack taken = stackInSlot.split(1); // Take 1
                      this.inventory.addItem(taken);
                      acquired = true;
                 }
@@ -369,10 +333,15 @@ public class DroneEntity extends PathfinderMob {
         if (handler != null) {
             for (int i = 0; i < handler.getSlots(); i++) {
                 if (handler.getStackInSlot(i).is(stack.getItem())) {
-                    ItemStack taken = handler.extractItem(i, 1, false);
-                    if (!taken.isEmpty()) {
-                        this.inventory.addItem(taken);
-                        return true;
+                    // Simulate extraction
+                    ItemStack simulated = handler.extractItem(i, 1, true);
+                    if (!simulated.isEmpty()) {
+                        // Check if it fits in drone
+                        if (this.inventory.canAddItem(simulated)) {
+                            ItemStack taken = handler.extractItem(i, 1, false);
+                            this.inventory.addItem(taken);
+                            return true;
+                        }
                     }
                 }
             }
@@ -387,10 +356,8 @@ public class DroneEntity extends PathfinderMob {
         moveSmoothlyTo(currentJob.pos().getCenter(), 0.7);
         if (this.position().distanceTo(currentJob.pos().getCenter()) < 1.5) {
             BlockPos pos = currentJob.pos();
-            
-            // Visual Beam
             if (com.example.ghostlib.config.GhostLibConfig.RENDER_DRONE_BEAMS) {
-                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 0.2f, 0.2f, 1.0f); // Blue beam for build
+                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 0.2f, 0.2f, 1.0f); 
             }
 
             BlockState worldState = level().getBlockState(pos);

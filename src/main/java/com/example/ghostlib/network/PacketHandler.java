@@ -34,12 +34,6 @@ public class PacketHandler {
             com.example.ghostlib.network.payload.ServerboundRedoPacket::handle
         );
 
-        registrar.playToServer(
-            com.example.ghostlib.network.payload.ServerboundToolModePacket.TYPE,
-            com.example.ghostlib.network.payload.ServerboundToolModePacket.STREAM_CODEC,
-            com.example.ghostlib.network.payload.ServerboundToolModePacket::handle
-        );
-
         registrar.playToClient(
             com.example.ghostlib.network.payload.S2CSyncDeconstructionPacket.TYPE,
             com.example.ghostlib.network.payload.S2CSyncDeconstructionPacket.STREAM_CODEC,

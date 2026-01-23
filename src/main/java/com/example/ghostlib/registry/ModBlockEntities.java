@@ -24,15 +24,18 @@ public class ModBlockEntities {
             BLOCK_ENTITIES.register("drone_port_member", () ->
                     BlockEntityType.Builder.of(com.example.ghostlib.block.entity.DronePortMemberBlockEntity::new, ModBlocks.DRONE_PORT_MEMBER.get()).build(null));
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<com.example.ghostlib.block.entity.MaterialStorageBlockEntity>> MATERIAL_STORAGE =
-            BLOCK_ENTITIES.register("material_storage", () ->
-                    BlockEntityType.Builder.of(com.example.ghostlib.block.entity.MaterialStorageBlockEntity::new, ModBlocks.MATERIAL_STORAGE.get()).build(null));
+        public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<com.example.ghostlib.block.entity.MaterialStorageBlockEntity>> MATERIAL_STORAGE =
 
-    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<com.example.ghostlib.block.entity.ElectricFurnaceControllerBlockEntity>> ELECTRIC_FURNACE_CONTROLLER =
-            BLOCK_ENTITIES.register("electric_furnace_controller", () ->
-                    BlockEntityType.Builder.of(com.example.ghostlib.block.entity.ElectricFurnaceControllerBlockEntity::new, ModBlocks.ELECTRIC_FURNACE_CONTROLLER.get()).build(null));
+                BLOCK_ENTITIES.register("material_storage",
 
-    public static void register(IEventBus eventBus) {
-        BLOCK_ENTITIES.register(eventBus);
+                        () -> BlockEntityType.Builder.of(com.example.ghostlib.block.entity.MaterialStorageBlockEntity::new, ModBlocks.MATERIAL_STORAGE.get()).build(null));
+
+    
+
+        public static void register(IEventBus eventBus) {
+
+            BLOCK_ENTITIES.register(eventBus);
+
+        }
+
     }
-}

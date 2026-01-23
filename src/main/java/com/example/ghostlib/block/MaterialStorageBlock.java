@@ -1,7 +1,6 @@
 package com.example.ghostlib.block;
 
 import com.example.ghostlib.block.entity.MaterialStorageBlockEntity;
-import com.example.ghostlib.block.entity.ElectricFurnaceControllerBlockEntity;
 import com.example.ghostlib.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
@@ -44,11 +43,7 @@ public class MaterialStorageBlock extends BaseEntityBlock {
         if (!state.is(newState.getBlock())) {
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof MaterialStorageBlockEntity member) {
-                member.getControllerPos().ifPresent(cPos -> {
-                    if (level.getBlockEntity(cPos) instanceof ElectricFurnaceControllerBlockEntity controller) {
-                        controller.disassemble();
-                    }
-                });
+                // Controller notification logic removed for refactor
             }
         }
         super.onRemove(state, level, pos, newState, isMoving);

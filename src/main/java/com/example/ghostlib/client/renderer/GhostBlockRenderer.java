@@ -46,6 +46,8 @@ public class GhostBlockRenderer implements BlockEntityRenderer<GhostBlockEntity>
             poseStack.popPose();
             return;
         }
+        
+        // If TO_REMOVE but captured is Air (e.g. deleting a Ghost Block), we fall through to render the Red Cube below.
 
         float r, g, b;
         float alpha = 0.6f;
@@ -54,7 +56,7 @@ public class GhostBlockRenderer implements BlockEntityRenderer<GhostBlockEntity>
             case 0: r = 0.0f; g = 0.0f; b = 0.5f; break; // UNASSIGNED - Deep Blue
             case 1: r = 0.4f; g = 0.8f; b = 1.0f; break; // ASSIGNED - Light Blue
             case 2: r = 0.0f; g = 0.3f; b = 1.0f; break; // FETCHING - Dark Blue
-            case 3: r = 1.0f; g = 0.9f; b = 0.0f; break; // INCOMING - Yellow
+            case 3: r = 1.0f; g = 1.0f; b = 0.0f; alpha = 0.8f; break; // INCOMING - Yellow (Higher Alpha)
             case 4: r = 1.0f; g = 0.0f; b = 0.0f; break; // TO_REMOVE - Red
             case 5: r = 1.0f; g = 0.0f; b = 1.0f; break; // MISSING_ITEMS - Purple
             case 6: r = 1.0f; g = 0.0f; b = 0.0f; break; // REMOVING - Red

@@ -33,7 +33,7 @@ public class GhostCommand {
     private static int saveBlueprint(CommandSourceStack source, String name) {
         if (source.getEntity() instanceof Player player) {
             ItemStack stack = player.getMainHandItem();
-            if (stack.getItem() instanceof com.example.ghostlib.item.GhostPlacerItem) {
+            if (stack.getItem() instanceof com.example.ghostlib.item.BlueprintItem) {
                 CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
                 if (tag.contains("Pattern")) {
                     BlueprintManager.saveBlueprint(name, tag);
@@ -43,7 +43,7 @@ public class GhostCommand {
                     source.sendFailure(Component.literal("Handheld item has no pattern to save."));
                 }
             } else {
-                source.sendFailure(Component.literal("Must hold a Ghost Placer with a pattern."));
+                source.sendFailure(Component.literal("Must hold a Blueprint Item with a pattern."));
             }
         }
         return 0;
@@ -52,7 +52,7 @@ public class GhostCommand {
     private static int loadBlueprint(CommandSourceStack source, String name) {
          if (source.getEntity() instanceof Player player) {
             ItemStack stack = player.getMainHandItem();
-            if (stack.getItem() instanceof com.example.ghostlib.item.GhostPlacerItem) {
+            if (stack.getItem() instanceof com.example.ghostlib.item.BlueprintItem) {
                 CompoundTag loaded = BlueprintManager.loadBlueprint(name);
                 if (loaded != null) {
                     stack.set(DataComponents.CUSTOM_DATA, CustomData.of(loaded));
@@ -62,7 +62,7 @@ public class GhostCommand {
                      source.sendFailure(Component.literal("Blueprint '" + name + "' not found."));
                 }
             } else {
-                 source.sendFailure(Component.literal("Must hold a Ghost Placer."));
+                 source.sendFailure(Component.literal("Must hold a Blueprint Item."));
             }
          }
          return 0;

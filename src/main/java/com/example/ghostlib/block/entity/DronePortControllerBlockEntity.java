@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-public class DronePortControllerBlockEntity extends BlockEntity implements com.example.ghostlib.multiblock.IMultiblockController, com.example.voltlink.api.IVoltReceiver {
+public class DronePortControllerBlockEntity extends BlockEntity implements com.example.ghostlib.multiblock.IMultiblockController {
     
     private final ItemStackHandler droneStorage = new ItemStackHandler(64) {
         @Override
@@ -44,19 +44,10 @@ public class DronePortControllerBlockEntity extends BlockEntity implements com.e
     @Override
     public void onLoad() {
         super.onLoad();
-        if (level != null && !level.isClientSide) {
-            com.example.voltlink.network.GridManager.get(level).subscribe(this, level);
-            // ADD NODE TO GRID FOR VISIBLE WIRE
-            com.example.voltlink.network.GridManager.get(level).addNode(getBlockPos(), level);
-        }
     }
 
     @Override
     public void setRemoved() {
-        if (level != null && !level.isClientSide) {
-            com.example.voltlink.network.GridManager.get(level).unsubscribe(this, level);
-            com.example.voltlink.network.GridManager.get(level).removeNode(getBlockPos(), level);
-        }
         super.setRemoved();
     }
 
@@ -80,11 +71,6 @@ public class DronePortControllerBlockEntity extends BlockEntity implements com.e
     public void assemble() {
         this.isAssembled = true;
         
-        // Explicitly register with Grid upon assembly to ensure wire appears
-        if (level != null && !level.isClientSide) {
-            com.example.voltlink.network.GridManager.get(level).addNode(getBlockPos(), level);
-        }
-
         BlockPos base = getBlockPos().offset(-1, 0, -1);
         for (int y = 0; y < 3; y++) {
             for (int x = 0; x < 3; x++) {
@@ -97,21 +83,6 @@ public class DronePortControllerBlockEntity extends BlockEntity implements com.e
             }
         }
         setChanged();
-    }
-
-    @Override
-    public long getVoltDemand() {
-        return energyStorage.getEnergyStored() < energyStorage.getMaxEnergyStored() ? 1000 : 0;
-    }
-
-    @Override
-    public void onVoltReceive(long amount) {
-        this.energyStorage.receiveEnergy((int) amount, false);
-    }
-
-    @Override
-    public BlockPos getVoltPos() {
-        return getBlockPos();
     }
 
     public static void tick(Level level, BlockPos pos, BlockState state, DronePortControllerBlockEntity be) {
@@ -131,7 +102,7 @@ public class DronePortControllerBlockEntity extends BlockEntity implements com.e
             });
         }
 
-        if (activeDrones.size() < maxActiveDrones) {
+        if (activeDrones.size() < com.example.ghostlib.config.GhostLibConfig.PORT_MAX_ACTIVE_DRONES) {
             if (hasJobInHive()) {
                 ItemStack droneItem = ItemStack.EMPTY;
                 for (int i = 0; i < droneStorage.getSlots(); i++) {
@@ -152,18 +123,6 @@ public class DronePortControllerBlockEntity extends BlockEntity implements com.e
     private boolean hasJobInHive() {
         // Local Check First
         if (com.example.ghostlib.util.GhostJobManager.get(level).hasAvailableJob(getBlockPos(), activationRange)) return true;
-
-        // Grid Check
-        com.example.voltlink.network.GridManager.PowerIsland island = com.example.voltlink.network.GridManager.get(level).getIsland(getBlockPos());
-        if (island != null) {
-            synchronized (island.receivers) {
-                for (com.example.voltlink.api.IVoltReceiver r : island.receivers) {
-                    if (r instanceof DronePortControllerBlockEntity otherPort && !otherPort.getBlockPos().equals(getBlockPos())) {
-                        if (com.example.ghostlib.util.GhostJobManager.get(level).hasAvailableJob(otherPort.getBlockPos(), otherPort.activationRange)) return true;
-                    }
-                }
-            }
-        }
         return false;
     }
 
@@ -189,7 +148,7 @@ public class DronePortControllerBlockEntity extends BlockEntity implements com.e
                 player.displayClientMessage(net.minecraft.network.chat.Component.literal("Hangar: ").withStyle(net.minecraft.ChatFormatting.GRAY)
                         .append(net.minecraft.network.chat.Component.literal(dronesCount + " / 64 Drones").withStyle(net.minecraft.ChatFormatting.AQUA)), false);
                 player.displayClientMessage(net.minecraft.network.chat.Component.literal("Active: ").withStyle(net.minecraft.ChatFormatting.GRAY)
-                        .append(net.minecraft.network.chat.Component.literal(activeDrones.size() + " / " + maxActiveDrones).withStyle(net.minecraft.ChatFormatting.WHITE)), false);
+                        .append(net.minecraft.network.chat.Component.literal(activeDrones.size() + " / " + com.example.ghostlib.config.GhostLibConfig.PORT_MAX_ACTIVE_DRONES).withStyle(net.minecraft.ChatFormatting.WHITE)), false);
             }
             return InteractionResult.SUCCESS;
         }

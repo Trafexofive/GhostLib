@@ -130,7 +130,14 @@ public class GhostBlockEntity extends BlockEntity {
             }
         } else {
             // Unassigning - return to the appropriate queue state
-            this.currentState = (this.currentState == GhostState.REMOVING) ? GhostState.TO_REMOVE : GhostState.UNASSIGNED;
+            // If it was MISSING_ITEMS, keep it (Hibernate). If REMOVING, go to TO_REMOVE. Else UNASSIGNED.
+            if (this.currentState == GhostState.MISSING_ITEMS) {
+                // Stay MISSING_ITEMS
+            } else if (this.currentState == GhostState.REMOVING) {
+                this.currentState = GhostState.TO_REMOVE;
+            } else {
+                this.currentState = GhostState.UNASSIGNED;
+            }
             if (level != null && !level.isClientSide) {
                 GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
             }
@@ -181,4 +188,9 @@ public class GhostBlockEntity extends BlockEntity {
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) { return saveWithoutMetadata(registries); }
     @Override
     public ClientboundBlockEntityDataPacket getUpdatePacket() { return ClientboundBlockEntityDataPacket.create(this); }
+
+    @Override
+    public void onDataPacket(net.minecraft.network.Connection net, ClientboundBlockEntityDataPacket pkt, HolderLookup.Provider lookupProvider) {
+        if (pkt.getTag() != null) loadAdditional(pkt.getTag(), lookupProvider);
+    }
 }

@@ -20,19 +20,13 @@ Drones are custom AI entities that handle the physical labor.
 ### 3. Drone Port & Multiblocks
 The **Drone Port** is a 3x3 multiblock structure that serves as a hangar and charging station for drones.
 *   **Autonomous Deployment:** Automatically spawns drones when jobs are detected within range.
-*   **Energy Integration:** Consumes VoltLink Flux power to deploy and maintain drones.
 *   **Inventory Storage:** Holds a stack of Drone Eggs and provides a workspace for swarm coordination.
 
 ### 4. Blueprint System
 Blueprints allow for the projection of complex structures into ghost blocks.
 *   **Electric Furnace Blueprint:** A starter item that projects a 3x3 base structure.
-*   **Drag-to-Place:** Uses the same high-fidelity preview system as the standard Placer.
+*   **Global Selection:** Use `Ctrl+C`, `Ctrl+V`, `Ctrl+X` to manage blueprints without needing a specific tool item.
 *   **Auto-Patterning:** Items can be configured to automatically generate patterns when held.
-
-## VoltLink Integration
-GhostLib is designed to work seamlessly with **VoltLink** for power management.
-*   **Wireless Charging:** Drone Ports can draw power wirelessly from **Electric Floors(should be electric wires)** connected to the grid.
-*   **Grid Demand:** Ports request power from the grid only when needed (e.g., during deployment).
 
 ## Configuration (`config/*.yml`)
 GhostLib uses YAML-based configuration for easy tuning:
