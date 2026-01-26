@@ -23,6 +23,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -65,6 +66,25 @@ public class ClientModEventSubscriber {
     @EventBusSubscriber(modid = GhostLib.MODID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
     public static class GameBusEvents {
         
+        @SubscribeEvent
+        public static void onRightClickItem(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickItem event) {
+            if (!event.getLevel().isClientSide) return;
+            
+            ItemStack stack = event.getItemStack();
+            if (stack.getItem() instanceof com.example.ghostlib.item.BlueprintItem) {
+                if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_DATA)) {
+                    CompoundTag tag = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA).copyTag();
+                    if (tag.contains("Pattern")) {
+                        ClientClipboard.setClipboard(tag);
+                        ClientGlobalSelection.setMode(ClientGlobalSelection.SelectionMode.PASTE);
+                        Minecraft.getInstance().player.displayClientMessage(Component.literal("Blueprint Loaded. Mode: Paste"), true);
+                        event.setCancellationResult(net.minecraft.world.InteractionResult.SUCCESS);
+                        event.setCanceled(true);
+                    }
+                }
+            }
+        }
+
         @SubscribeEvent
         public static void onClientTick(net.neoforged.neoforge.client.event.ClientTickEvent.Post event) {
             ClientGlobalSelection.checkExpiry();
