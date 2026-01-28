@@ -3,7 +3,6 @@ package com.example.ghostlib.client;
 import com.example.ghostlib.GhostLib;
 import com.example.ghostlib.client.model.DroneModel;
 import com.example.ghostlib.client.renderer.entity.DroneRenderer;
-import com.example.ghostlib.client.renderer.entity.PortDroneRenderer;
 import com.example.ghostlib.client.util.ClientClipboard;
 import com.example.ghostlib.client.util.ClientGlobalSelection;
 import com.example.ghostlib.registry.ModBlockEntities;
@@ -50,7 +49,6 @@ public class ClientModEventSubscriber {
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(ModBlockEntities.GHOST_BLOCK_ENTITY.get(), com.example.ghostlib.client.renderer.GhostBlockRenderer::new);
         event.registerEntityRenderer(ModEntities.DRONE.get(), DroneRenderer::new);
-        event.registerEntityRenderer(ModEntities.PORT_DRONE.get(), PortDroneRenderer::new);
     }
 
     @SubscribeEvent

@@ -22,12 +22,6 @@ public class ModBlocks {
                 .replaceable()
                 .forceSolidOff()));
 
-    public static final DeferredBlock<Block> DRONE_PORT_CONTROLLER = BLOCKS.register("drone_port_controller",
-        () -> new com.example.ghostlib.block.DronePortControllerBlock(BlockBehaviour.Properties.of().strength(5.0f).noOcclusion()));
-
-    public static final DeferredBlock<Block> DRONE_PORT_MEMBER = BLOCKS.register("drone_port_member",
-        () -> new com.example.ghostlib.block.DronePortMemberBlock(BlockBehaviour.Properties.of().strength(5.0f)));
-
     public static final DeferredBlock<Block> MATERIAL_STORAGE = BLOCKS.register("material_storage",
             () -> new com.example.ghostlib.block.MaterialStorageBlock(BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(3.0f).sound(SoundType.METAL)));
 

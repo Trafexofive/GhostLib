@@ -29,13 +29,6 @@ public class PlayerLoginEventHandler {
         if (!player.getPersistentData().contains(tag)) {
             player.getPersistentData().putBoolean(tag, true);
             
-            // Give Drone Port Materials
-            player.getInventory().add(new ItemStack(ModItems.DRONE_PORT_CONTROLLER_ITEM.get(), 1));
-            player.getInventory().add(new ItemStack(ModItems.DRONE_PORT_MEMBER_ITEM.get(), 8));
-            
-            // Give Drone Port Blueprint
-            player.getInventory().add(createBlueprint("Drone Port", createDronePortPattern()));
-
             // Give Drones
             player.getInventory().add(new ItemStack(ModItems.DRONE_SPAWN_EGG.get(), 16));
 
@@ -53,41 +46,5 @@ public class PlayerLoginEventHandler {
                 }
             }
         }
-    }
-
-    private static ItemStack createBlueprint(String name, CompoundTag patternTag) {
-        ItemStack stack = new ItemStack(ModItems.BLUEPRINT.get());
-        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(patternTag));
-        stack.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal(name).withStyle(net.minecraft.ChatFormatting.YELLOW));
-        return stack;
-    }
-
-    private static CompoundTag createDronePortPattern() {
-        CompoundTag tag = new CompoundTag();
-        ListTag patternList = new ListTag();
-        
-        // 3x3 Platform
-        // Rel coordinates: 0..2, 0, 0..2
-        // Controller at Center (1, 0, 1)
-        for (int x = 0; x < 3; x++) {
-            for (int z = 0; z < 3; z++) {
-                BlockState state;
-                if (x == 1 && z == 1) {
-                    state = ModBlocks.DRONE_PORT_CONTROLLER.get().defaultBlockState();
-                } else {
-                    state = ModBlocks.DRONE_PORT_MEMBER.get().defaultBlockState();
-                }
-
-                CompoundTag blockTag = new CompoundTag();
-                blockTag.put("Rel", NbtUtils.writeBlockPos(new BlockPos(x, 0, z)));
-                blockTag.put("State", NbtUtils.writeBlockState(state));
-                patternList.add(blockTag);
-            }
-        }
-        tag.put("Pattern", patternList);
-        tag.putInt("SizeX", 3);
-        tag.putInt("SizeY", 1);
-        tag.putInt("SizeZ", 3);
-        return tag;
     }
 }
