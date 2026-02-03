@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "ghostlib:block/active_provider_chest" }
+  }
+}

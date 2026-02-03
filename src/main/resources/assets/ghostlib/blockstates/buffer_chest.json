@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "ghostlib:block/buffer_chest" }
+  }
+}

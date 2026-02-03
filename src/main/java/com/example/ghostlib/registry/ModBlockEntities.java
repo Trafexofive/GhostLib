@@ -20,6 +20,21 @@ public class ModBlockEntities {
             BLOCK_ENTITIES.register("material_storage",
                     () -> BlockEntityType.Builder.of(com.example.ghostlib.block.entity.MaterialStorageBlockEntity::new, ModBlocks.MATERIAL_STORAGE.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<com.example.ghostlib.block.entity.DronePortBlockEntity>> DRONE_PORT =
+            BLOCK_ENTITIES.register("drone_port",
+                    () -> BlockEntityType.Builder.of(com.example.ghostlib.block.entity.DronePortBlockEntity::new, ModBlocks.DRONE_PORT.get()).build(null));
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<com.example.ghostlib.block.entity.LogisticalChestBlockEntity>> LOGISTICAL_CHEST =
+            BLOCK_ENTITIES.register("logistical_chest",
+                    () -> BlockEntityType.Builder.of(com.example.ghostlib.block.entity.LogisticalChestBlockEntity::new, 
+                        ModBlocks.LOGISTICAL_CHEST.get(),
+                        ModBlocks.PASSIVE_PROVIDER_CHEST.get(),
+                        ModBlocks.REQUESTER_CHEST.get(),
+                        ModBlocks.STORAGE_CHEST.get(),
+                        ModBlocks.ACTIVE_PROVIDER_CHEST.get(),
+                        ModBlocks.BUFFER_CHEST.get()
+                    ).build(null));
+
     public static void register(IEventBus eventBus) {
         BLOCK_ENTITIES.register(eventBus);
     }

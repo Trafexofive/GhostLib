@@ -1,0 +1,6 @@
+{
+    "parent": "minecraft:block/cube_all",
+    "textures": {
+      "all": "ghostlib:block/logistical_chest_storage"
+    }
+  }

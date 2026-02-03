@@ -54,19 +54,25 @@ public class GhostBlockEntity extends BlockEntity {
         }
     }
 
-    /** The block that will be placed once construction is complete. */
     private BlockState targetState = Blocks.AIR.defaultBlockState();
-    /** The state of the block that was there before (used for rendering deconstruction). */
-    private BlockState capturedState = Blocks.AIR.defaultBlockState(); 
-    /** The UUID of the drone currently working on this block. */
-    @Nullable
-    private UUID assignedTo;
-    /** Current phase of the construction lifecycle. */
+    private BlockState capturedState = Blocks.AIR.defaultBlockState();
+    private CompoundTag capturedNbt = null;
     private GhostState currentState = GhostState.UNASSIGNED;
+    private UUID assignedTo = null;
 
-    public GhostBlockEntity(BlockPos pos, BlockState blockState) {
-        super(ModBlockEntities.GHOST_BLOCK_ENTITY.get(), pos, blockState);
+    public GhostBlockEntity(BlockPos pos, BlockState state) {
+        super(ModBlockEntities.GHOST_BLOCK_ENTITY.get(), pos, state);
     }
+
+    public void setCapturedNbt(CompoundTag nbt) {
+        this.capturedNbt = nbt;
+        setChanged();
+    }
+
+    public CompoundTag getCapturedNbt() {
+        return capturedNbt;
+    }
+
 
     public BlockState getTargetState() { return this.targetState; }
     public BlockState getCapturedState() { return this.capturedState; }
@@ -95,7 +101,10 @@ public class GhostBlockEntity extends BlockEntity {
     public void setState(GhostState state) {
         this.currentState = state;
         if (level != null && !level.isClientSide) {
-            GhostJobManager.get(level).registerJob(getBlockPos(), state, targetState);
+            // Only register if we have a target or are deconstructing
+            if (!targetState.isAir() || currentState == GhostState.TO_REMOVE || currentState == GhostState.REMOVING) {
+                GhostJobManager.get(level).registerJob(getBlockPos(), state, targetState);
+            }
         }
         sync();
     }
@@ -108,14 +117,12 @@ public class GhostBlockEntity extends BlockEntity {
     public void onLoad() {
         super.onLoad();
         if (level != null && !level.isClientSide) {
-            GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
+            if (!targetState.isAir() || currentState == GhostState.TO_REMOVE || currentState == GhostState.REMOVING) {
+                GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
+            }
         }
     }
 
-    /**
-     * Assigns a drone to this ghost block. Handles automatic state transitions
-     * between Queue states and Active states.
-     */
     public void setAssignedTo(@Nullable UUID assignedTo) {
         this.assignedTo = assignedTo;
         if (assignedTo != null) {
@@ -125,20 +132,17 @@ public class GhostBlockEntity extends BlockEntity {
             } else {
                 this.currentState = GhostState.ASSIGNED;
             }
-            if (level != null && !level.isClientSide) {
-                GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
-            }
         } else {
             // Unassigning - return to the appropriate queue state
-            // If it was MISSING_ITEMS, keep it (Hibernate). If REMOVING, go to TO_REMOVE. Else UNASSIGNED.
-            if (this.currentState == GhostState.MISSING_ITEMS) {
-                // Stay MISSING_ITEMS
-            } else if (this.currentState == GhostState.REMOVING) {
+            if (this.currentState == GhostState.REMOVING) {
                 this.currentState = GhostState.TO_REMOVE;
-            } else {
+            } else if (this.currentState != GhostState.MISSING_ITEMS) {
                 this.currentState = GhostState.UNASSIGNED;
             }
-            if (level != null && !level.isClientSide) {
+        }
+        
+        if (level != null && !level.isClientSide) {
+            if (!targetState.isAir() || currentState == GhostState.TO_REMOVE || currentState == GhostState.REMOVING) {
                 GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
             }
         }
@@ -167,21 +171,37 @@ public class GhostBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+    protected void saveAdditional(CompoundTag tag, net.minecraft.core.HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        tag.put("target_state", NbtUtils.writeBlockState(this.targetState));
-        tag.put("captured_state", NbtUtils.writeBlockState(this.capturedState));
-        if (assignedTo != null) tag.putUUID("assigned_to", assignedTo);
-        tag.putInt("current_state", this.currentState.id);
+        tag.put("target", net.minecraft.nbt.NbtUtils.writeBlockState(targetState));
+        tag.put("captured", net.minecraft.nbt.NbtUtils.writeBlockState(capturedState));
+        if (capturedNbt != null) {
+            tag.put("capturedNbt", capturedNbt);
+        }
+        tag.putString("state", currentState.name());
+        if (assignedTo != null) {
+            tag.putUUID("assigned", assignedTo);
+        }
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+    protected void loadAdditional(CompoundTag tag, net.minecraft.core.HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        this.targetState = NbtUtils.readBlockState(registries.lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK), tag.getCompound("target_state"));
-        if (tag.contains("captured_state")) this.capturedState = NbtUtils.readBlockState(registries.lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK), tag.getCompound("captured_state"));
-        this.assignedTo = tag.hasUUID("assigned_to") ? tag.getUUID("assigned_to") : null;
-        this.currentState = GhostState.fromId(tag.getInt("current_state"));
+        if (tag.contains("target")) {
+            targetState = net.minecraft.nbt.NbtUtils.readBlockState(registries.lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK), tag.getCompound("target"));
+        }
+        if (tag.contains("captured")) {
+            capturedState = net.minecraft.nbt.NbtUtils.readBlockState(registries.lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK), tag.getCompound("captured"));
+        }
+        if (tag.contains("capturedNbt")) {
+            capturedNbt = tag.getCompound("capturedNbt");
+        }
+        if (tag.contains("state")) {
+            currentState = GhostState.valueOf(tag.getString("state"));
+        }
+        if (tag.contains("assigned")) {
+            assignedTo = tag.getUUID("assigned");
+        }
     }
 
     @Override

@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "ghostlib:block/ghost_block"
+    }
+  }
+}

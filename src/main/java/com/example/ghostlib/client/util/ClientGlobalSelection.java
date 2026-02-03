@@ -12,13 +12,24 @@ public class ClientGlobalSelection {
     public static SelectionMode currentMode = SelectionMode.NONE;
     public static BlockPos anchorPos = null;
     public static BlockPos currentEndPos = null;
-    
+
+    // Lock Mode: Freezes the cursor position for Paste/Details
+    public static boolean isLocked = false;
+    public static BlockPos lockedPos = null;
+
+    // Offset Mode: Shifts the pattern relative to anchor/lockedPos
+    public static BlockPos patternOffset = BlockPos.ZERO;
+
+    // Tiling Spacing: Gap/Overlap between tiles
+    public static int tilingSpacingX = 0;
+    public static int tilingSpacingZ = 0;
+
     // Tracks if the user is currently holding the mouse button for a selection/drag
     public static boolean isSelecting = false;
     public static boolean startedSelectionThisClick = false;
-    
+
     private static long lastInteractionTime = 0;
-    private static final long TIMEOUT_MS = 5000; // 5 seconds
+    private static final long TIMEOUT_MS = 60000; // Increased to 60s for better UX
 
     public static void setMode(SelectionMode mode) {
         currentMode = mode;
@@ -47,21 +58,31 @@ public class ClientGlobalSelection {
         anchorPos = null;
         currentEndPos = null;
         isSelecting = false;
+
+        // Reset lock on mode change
+        isLocked = false;
+        lockedPos = null;
+        patternOffset = BlockPos.ZERO;
+        tilingSpacingX = 0;
+        tilingSpacingZ = 0;
+
         updateInteractionTime();
     }
-    
+
     public static void updateInteractionTime() {
         lastInteractionTime = System.currentTimeMillis();
     }
 
     public static void checkExpiry() {
-        if (currentMode != SelectionMode.NONE && !isSelecting) {
+        if (currentMode != SelectionMode.NONE && !isSelecting && !isLocked) {
+            // Only timeout if not selecting and NOT locked.
             if (System.currentTimeMillis() - lastInteractionTime > TIMEOUT_MS) {
                 setMode(SelectionMode.NONE);
-                Minecraft.getInstance().player.displayClientMessage(Component.literal("Selection Mode Timed Out"), true);
+                Minecraft.getInstance().player.displayClientMessage(Component.literal("Selection Mode Timed Out"),
+                        true);
             }
-        } else if (isSelecting) {
-            updateInteractionTime(); // Keep alive while dragging
+        } else if (isSelecting || isLocked) {
+            updateInteractionTime(); // Keep alive
         }
     }
 }

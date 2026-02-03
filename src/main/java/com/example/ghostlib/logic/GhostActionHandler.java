@@ -23,15 +23,19 @@ public class GhostActionHandler {
         PLACE, DECONSTRUCT
     }
 
-    public static void handlePlacement(ServerLevel level, ServerPlayer player, BlockPos start, BlockPos end, int placementMode, CompoundTag patternTag) {
+    public static void handlePlacement(ServerLevel level, ServerPlayer player, BlockPos start, BlockPos end, int placementMode, int spacingX, int spacingZ, CompoundTag patternTag) {
         if (patternTag == null || !patternTag.contains("Pattern")) return;
         
         ListTag patternList = patternTag.getList("Pattern", 10);
         List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
         List<BlockPos> placementOrigins = new ArrayList<>();
         
-        int sizeX = Math.max(1, patternTag.getInt("SizeX"));
-        int sizeZ = Math.max(1, patternTag.getInt("SizeZ"));
+        int bpSizeX = Math.max(1, patternTag.getInt("SizeX"));
+        int bpSizeZ = Math.max(1, patternTag.getInt("SizeZ"));
+
+        // Effective tiling step
+        int stepX = bpSizeX + spacingX;
+        int stepZ = bpSizeZ + spacingZ;
 
         boolean isGrid = (placementMode & 1) != 0;
         boolean isForce = (placementMode & 4) != 0;
@@ -42,8 +46,8 @@ public class GhostActionHandler {
              int zDir = end.getZ() >= start.getZ() ? 1 : -1;
              int xRange = Math.abs(end.getX() - start.getX());
              int zRange = Math.abs(end.getZ() - start.getZ());
-             for (int x = 0; x <= xRange; x += sizeX) {
-                 for (int z = 0; z <= zRange; z += sizeZ) {
+             for (int x = 0; x <= xRange; x += Math.max(1, stepX)) {
+                 for (int z = 0; z <= zRange; z += Math.max(1, stepZ)) {
                      placementOrigins.add(start.offset(x * xDir, 0, z * zDir));
                  }
              }
@@ -51,13 +55,13 @@ public class GhostActionHandler {
              int dx = end.getX() - start.getX();
              int dz = end.getZ() - start.getZ();
              if (Math.abs(dx) >= Math.abs(dz)) {
-                 int steps = Math.abs(dx) / sizeX;
+                 int steps = Math.abs(dx) / Math.max(1, stepX);
                  int dir = dx >= 0 ? 1 : -1;
-                 for (int i=0; i<=steps; i++) placementOrigins.add(start.offset(i * sizeX * dir, 0, 0));
+                 for (int i=0; i<=steps; i++) placementOrigins.add(start.offset(i * stepX * dir, 0, 0));
              } else {
-                 int steps = Math.abs(dz) / sizeZ;
+                 int steps = Math.abs(dz) / Math.max(1, stepZ);
                  int dir = dz >= 0 ? 1 : -1;
-                 for (int i=0; i<=steps; i++) placementOrigins.add(start.offset(0, 0, i * sizeZ * dir));
+                 for (int i=0; i<=steps; i++) placementOrigins.add(start.offset(0, 0, i * stepZ * dir));
              }
         }
 
@@ -72,42 +76,28 @@ public class GhostActionHandler {
                 BlockState worldState = level.getBlockState(target);
 
                 if (bpState != null && !bpState.isAir() && !worldState.equals(bpState)) {
-                    // Logic:
-                    // If Force: Place Ghost (Overriding whatever is there).
-                    // If Safe (Default): 
-                    //    If Air or Ghost -> Place Ghost.
-                    //    If Solid -> Deconstruct.
-                    
-                    if (isForce) {
-                        // Force Place: Sets Ghost Block immediately.
-                        // If there was a block, we capture it in the Ghost Block so it renders Red (TO_REMOVE).
-                        changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState)); // History tracks change
+                    CompoundTag capturedNbt = blockTag.contains("Data") ? blockTag.getCompound("Data") : null;
+
+                    // ZERO FORCE: No magic placement.
+                    if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
+                        // Area is obstructed by a real block.
+                        if (isForce) {
+                            // Order deconstruction, then the ghost marker.
+                            changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
+                            GhostJobManager.get(level).registerDirectDeconstruct(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), bpState, level);
+                        }
+                        // If not forcing, we skip obstructed positions.
+                    } else {
+                        // Area is Air or a Ghost marker. Safe to place/update the marker.
+                        changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState,
+                                ModBlocks.GHOST_BLOCK.get().defaultBlockState()));
                         
                         level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
-                        if (level.getBlockEntity(target) instanceof GhostBlockEntity gbe) {
-                            gbe.setTargetState(bpState);
-                            // If worldState wasn't Air/Ghost, we mark it for removal
-                            if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
-                                gbe.setCapturedState(worldState); // Visual
-                                gbe.setState(GhostBlockEntity.GhostState.TO_REMOVE); // Logic
-                            } else {
-                                gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
-                            }
-                        }
-                    } else {
-                        // Safe Mode
-                        if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
-                            changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
-                            GhostJobManager.get(level).registerDirectDeconstruct(target, bpState, level);
-                        } else {
-                            if (worldState.getBlock() == ModBlocks.GHOST_BLOCK.get()) {
-                                if (level.getBlockEntity(target) instanceof GhostBlockEntity gbe && gbe.getTargetState().equals(bpState)) continue; 
-                            }
-                            changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
-                            level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
-                            if (level.getBlockEntity(target) instanceof GhostBlockEntity gbe) {
-                                gbe.setTargetState(bpState);
-                                gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
+                        if (level.getBlockEntity(target) instanceof GhostBlockEntity ghost) {
+                            ghost.setTargetState(bpState);
+                            ghost.setState(GhostBlockEntity.GhostState.UNASSIGNED);
+                            if (capturedNbt != null) {
+                                ghost.setCapturedNbt(capturedNbt);
                             }
                         }
                     }
@@ -125,8 +115,9 @@ public class GhostActionHandler {
          
          for (BlockPos p : BlockPos.betweenClosed(min, max)) {
              BlockState worldState = level.getBlockState(p);
-             if (!worldState.isAir()) {
+             if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
                  changes.add(new GhostHistoryManager.StateChange(p.immutable(), worldState, Blocks.AIR.defaultBlockState()));
+                 // Mark for deconstruction by swarm. 
                  GhostJobManager.get(level).registerDirectDeconstruct(p, Blocks.AIR.defaultBlockState(), level);
              }
          }

@@ -14,18 +14,19 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.Optional;
 
-public record ServerboundPlaceGhostsPacket(BlockPos start, BlockPos end, int placementMode, Optional<CompoundTag> pattern) implements CustomPacketPayload {
+public record ServerboundPlaceGhostsPacket(BlockPos start, BlockPos end, int placementMode, int spacingX, int spacingZ, Optional<CompoundTag> pattern) implements CustomPacketPayload {
     public static final Type<ServerboundPlaceGhostsPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(GhostLib.MODID, "place_ghosts"));
 
-    // Modes: 0 = Normal, 1 = Semi-Force (Ctrl), 2 = Full-Force (Ctrl+Shift)
     public static final StreamCodec<FriendlyByteBuf, ServerboundPlaceGhostsPacket> STREAM_CODEC = StreamCodec.ofMember(
         (packet, buf) -> {
             buf.writeBlockPos(packet.start);
             buf.writeBlockPos(packet.end);
             buf.writeInt(packet.placementMode);
+            buf.writeInt(packet.spacingX);
+            buf.writeInt(packet.spacingZ);
             buf.writeOptional(packet.pattern, (b, t) -> b.writeNbt(t));
         },
-        buf -> new ServerboundPlaceGhostsPacket(buf.readBlockPos(), buf.readBlockPos(), buf.readInt(), buf.readOptional(b -> b.readNbt()))
+        buf -> new ServerboundPlaceGhostsPacket(buf.readBlockPos(), buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readOptional(b -> b.readNbt()))
     );
 
     @Override
@@ -38,7 +39,7 @@ public record ServerboundPlaceGhostsPacket(BlockPos start, BlockPos end, int pla
             if (context.player() instanceof ServerPlayer player) {
                 // 1. Explicit Pattern provided (Paste Mode)
                 if (packet.pattern().isPresent()) {
-                    com.example.ghostlib.logic.GhostActionHandler.handlePlacement(player.serverLevel(), player, packet.start(), packet.end(), packet.placementMode(), packet.pattern().get());
+                    com.example.ghostlib.logic.GhostActionHandler.handlePlacement(player.serverLevel(), player, packet.start(), packet.end(), packet.placementMode(), packet.spacingX(), packet.spacingZ(), packet.pattern().get());
                     return;
                 }
 

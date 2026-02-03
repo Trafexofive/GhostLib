@@ -16,8 +16,12 @@ repositories {
 }
 
 dependencies {
-    
+
+    implementation 'com.example:factorycore:1.0.0'
+
 }
+
+
 
 base {
     archivesName = project.mod_id

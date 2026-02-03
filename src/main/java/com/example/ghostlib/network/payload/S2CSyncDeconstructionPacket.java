@@ -14,22 +14,22 @@ import net.minecraft.world.level.block.Block;
 import java.util.HashMap;
 import java.util.Map;
 
-public record S2CSyncDeconstructionPacket(Map<BlockPos, Boolean> activeJobs) implements CustomPacketPayload {
+public record S2CSyncDeconstructionPacket(Map<BlockPos, Integer> activeJobs) implements CustomPacketPayload {
     public static final Type<S2CSyncDeconstructionPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(GhostLib.MODID, "sync_deconstruction"));
 
     public static final StreamCodec<FriendlyByteBuf, S2CSyncDeconstructionPacket> STREAM_CODEC = StreamCodec.ofMember(
         (packet, buf) -> {
             buf.writeInt(packet.activeJobs.size());
-            for (Map.Entry<BlockPos, Boolean> entry : packet.activeJobs.entrySet()) {
+            for (Map.Entry<BlockPos, Integer> entry : packet.activeJobs.entrySet()) {
                 buf.writeBlockPos(entry.getKey());
-                buf.writeBoolean(entry.getValue());
+                buf.writeInt(entry.getValue());
             }
         },
         buf -> {
             int size = buf.readInt();
-            Map<BlockPos, Boolean> map = new HashMap<>();
+            Map<BlockPos, Integer> map = new HashMap<>();
             for (int i = 0; i < size; i++) {
-                map.put(buf.readBlockPos(), buf.readBoolean());
+                map.put(buf.readBlockPos(), buf.readInt());
             }
             return new S2CSyncDeconstructionPacket(map);
         }
@@ -51,12 +51,9 @@ public record S2CSyncDeconstructionPacket(Map<BlockPos, Boolean> activeJobs) imp
             clientJobs.values().removeIf(Map::isEmpty);
 
             // 2. Add/Update jobs from packet
-            for (Map.Entry<BlockPos, Boolean> entry : packet.activeJobs().entrySet()) {
-                // If it exists, we assume it's valid. If not, register it.
-                // We use AIR as dummy state because packet only sends Boolean (Active).
-                if (!manager.isDeconstructAt(entry.getKey())) {
-                    manager.registerDirectDeconstruct(entry.getKey(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), level);
-                }
+            for (Map.Entry<BlockPos, Integer> entry : packet.activeJobs().entrySet()) {
+                BlockState targetState = Block.stateById(entry.getValue());
+                manager.registerDirectDeconstruct(entry.getKey(), targetState, level);
             }
         });
     }

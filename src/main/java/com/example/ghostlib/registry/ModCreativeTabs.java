@@ -20,7 +20,14 @@ public class ModCreativeTabs {
                     .displayItems((params, output) -> {
                         output.accept(ModItems.DRONE_SPAWN_EGG.get());
                         output.accept(ModItems.MATERIAL_STORAGE.get());
+                        output.accept(ModItems.DRONE_PORT.get());
                         output.accept(ModItems.BLUEPRINT.get());
+                        output.accept(ModItems.LOGISTICAL_CHEST.get());
+                        output.accept(ModItems.PASSIVE_PROVIDER_CHEST.get());
+                        output.accept(ModItems.REQUESTER_CHEST.get());
+                        output.accept(ModItems.STORAGE_CHEST.get());
+                        output.accept(ModItems.ACTIVE_PROVIDER_CHEST.get());
+                        output.accept(ModItems.BUFFER_CHEST.get());
                     })
                     .build());
 

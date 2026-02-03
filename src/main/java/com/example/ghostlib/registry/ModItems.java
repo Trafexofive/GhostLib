@@ -20,8 +20,29 @@ public class ModItems {
     public static final DeferredItem<Item> MATERIAL_STORAGE = ITEMS.register("material_storage",
             () -> new BlockItem(ModBlocks.MATERIAL_STORAGE.get(), new Item.Properties()));
 
+    public static final DeferredItem<Item> DRONE_PORT = ITEMS.register("drone_port",
+            () -> new BlockItem(ModBlocks.DRONE_PORT.get(), new Item.Properties()));
+
+    public static final DeferredItem<Item> LOGISTICAL_CHEST = ITEMS.register("logistical_chest",
+            () -> new BlockItem(ModBlocks.LOGISTICAL_CHEST.get(), new Item.Properties()));
+
+    public static final DeferredItem<Item> PASSIVE_PROVIDER_CHEST = ITEMS.register("passive_provider_chest",
+            () -> new BlockItem(ModBlocks.PASSIVE_PROVIDER_CHEST.get(), new Item.Properties()));
+    
+    public static final DeferredItem<Item> REQUESTER_CHEST = ITEMS.register("requester_chest",
+            () -> new BlockItem(ModBlocks.REQUESTER_CHEST.get(), new Item.Properties()));
+    
+    public static final DeferredItem<Item> STORAGE_CHEST = ITEMS.register("storage_chest",
+            () -> new BlockItem(ModBlocks.STORAGE_CHEST.get(), new Item.Properties()));
+    
+    public static final DeferredItem<Item> ACTIVE_PROVIDER_CHEST = ITEMS.register("active_provider_chest",
+            () -> new BlockItem(ModBlocks.ACTIVE_PROVIDER_CHEST.get(), new Item.Properties()));
+    
+    public static final DeferredItem<Item> BUFFER_CHEST = ITEMS.register("buffer_chest",
+            () -> new BlockItem(ModBlocks.BUFFER_CHEST.get(), new Item.Properties()));
+
     public static final DeferredItem<Item> BLUEPRINT = ITEMS.register("blueprint",
-            () -> new com.example.ghostlib.item.BlueprintItem(new Item.Properties().stacksTo(1)));
+            () -> new com.example.ghostlib.item.BlueprintItem(new Item.Properties().stacksTo(64)));
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);

@@ -1,7 +1,7 @@
 # GhostLib - Drone Construction Engine
 
 ## Overview
-GhostLib is a library and core engine for Minecraft 1.21.1 (NeoForge) that implements a high-performance, automated construction system using drones. The core philosophy is "physical interaction" — blocks are never instantly created or destroyed; they are built or deconstructed by flying entities.
+GhostLib is a library and core engine for Minecraft 1.21.1 (NeoForge) that implements a Factorio-grade, high-performance, automated construction system using drones. The core philosophy is "physical interaction" — blocks are never instantly created or destroyed; they are built or deconstructed by flying entities. Designed for scalability with support for 10,000+ concurrent operations.
 
 ## Core Architecture
 
@@ -13,20 +13,21 @@ The "Brain" of the operation. This singleton (per level) manages all active cons
 
 ### 2. Drone Swarm (`com.example.ghostlib.entity`)
 Drones are custom AI entities that handle the physical labor.
+*   **Attributes:** Drones use a high-fidelity attribute system for `work_speed`, `interaction_range`, `search_range`, and `energy_efficiency`. These can be modified via upgrades or tier progression.
 *   **Player-Owned Drones:** Follow the player and fetch items from their inventory.
-*   **Port-Owned Drones (`PortDroneEntity`):** Reside in a **Drone Port**. They fetch items from nearby containers and return home when idle or low on power.
+*   **Port-Owned Drones:** Reside in a **Drone Port**. They fetch items from nearby containers and return home when idle or low on power.
 *   **Finite State Machine (FSM):** Drones cycle through states like `FINDING_JOB`, `TRAVELING_FETCH`, `TRAVELING_BUILD`, and `DUMPING_ITEMS`.
 
-### 3. Drone Port & Multiblocks
-The **Drone Port** is a 3x3 multiblock structure that serves as a hangar and charging station for drones.
-*   **Autonomous Deployment:** Automatically spawns drones when jobs are detected within range.
-*   **Inventory Storage:** Holds a stack of Drone Eggs and provides a workspace for swarm coordination.
+### 3. Logistics & Multiblocks
+*   **Drone Port:** A 3x3x3 multiblock hangar. Drones dock at the top-center controller to charge and swap items. Pulls energy from the floor below the structure.
+*   **Logistical Chests:** Special containers (Provider, Requester, Storage, Buffer) that allow drones to autonomously manage inventory.
+*   **Smart Harvest:** When a drone breaks a container (Chest, etc.), it captures the contents into NBT and clears the block's inventory BEFORE removal. This prevents "item spewing" and enables high-fidelity transport of machines.
 
 ### 4. Blueprint System
 Blueprints allow for the projection of complex structures into ghost blocks.
-*   **Electric Furnace Blueprint:** A starter item that projects a 3x3 base structure.
-*   **Global Selection:** Use `Ctrl+C`, `Ctrl+V`, `Ctrl+X` to manage blueprints without needing a specific tool item.
-*   **Auto-Patterning:** Items can be configured to automatically generate patterns when held.
+*   **Global Selection:** Use `Ctrl+C`, `Ctrl+V`, `Ctrl+X` to manage patterns globally.
+*   **NBT Preservation:** Blueprints capture block entity data (inventory, settings). In Creative mode, these are restored instantly. In Survival, drones restore data if the construction item matches the original.
+*   **Super Force Build:** When placing a blueprint over an obstruction, the system displays a cyan ghost overlay inside the red deconstruction wireframe, confirming the final intent.
 
 ## Configuration (`config/*.yml`)
 GhostLib uses YAML-based configuration for easy tuning:

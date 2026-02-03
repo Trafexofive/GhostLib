@@ -1,190 +1,129 @@
 package com.example.ghostlib.util;
 
+import com.example.ghostlib.GhostLib;
 import com.example.ghostlib.block.entity.GhostBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * The GhostJobManager is the central coordination engine for the construction system.
- * It manages multiple task queues (Construction, Deconstruction, Removal) and handles
- * spatial-based job distribution to drones.
- *
- * This class uses ConcurrentHashMaps for thread-safe operations, allowing drones and
- * world events to interact with the job system simultaneously.
- */
 public class GhostJobManager {
-    /** Global instances mapped by Level to ensure independent job tracking per dimension. */
     private static final Map<Level, GhostJobManager> INSTANCES = new ConcurrentHashMap<>();
 
-    /** Defines the specific task type for a drone. */
-    public enum JobType { 
-        /** Building a new block from a ghost marker. */
-        CONSTRUCTION, 
-        /** Deleting a ghost marker without placing a block. */
-        GHOST_REMOVAL, 
-        /** Physically breaking a world block (e.g., removing an obstruction). */
-        DIRECT_DECONSTRUCT 
+    public enum JobType {
+        CONSTRUCTION,
+        GHOST_REMOVAL,
+        DIRECT_DECONSTRUCT
     }
 
-    /** A data record representing a task assigned to a drone. */
-    public record Job(BlockPos pos, JobType type, BlockState targetAfter) {}
+    public record Job(BlockPos pos, JobType type, BlockState targetAfter, BlockState finalState) {
+    }
 
-    /** Indexed by ChunkPos (long). Stores positions and target states for new construction. */
+    // Scalability-optimized job storage using chunk-based spatial partitioning
     private final Map<Long, Map<BlockPos, BlockState>> constructionJobs = new ConcurrentHashMap<>();
-    
-    /** Indexed by ChunkPos (long). Stores positions of ghost blocks to be removed. */
-    private final Map<Long, Set<BlockPos>> ghostRemovalJobs = new ConcurrentHashMap<>(); 
-    
-    /** Indexed by ChunkPos (long). Stores blocks marked for Silk-Touch deconstruction. */
+    private final Map<Long, Set<BlockPos>> ghostRemovalJobs = new ConcurrentHashMap<>();
     private final Map<Long, Map<BlockPos, BlockState>> directDeconstructJobs = new ConcurrentHashMap<>();
-    
-    /** Temporary storage for jobs that failed (e.g., missing items) before they are re-queued. */
     private final Map<Long, Map<BlockPos, BlockState>> hibernatingJobs = new ConcurrentHashMap<>();
-    
-    /** Tracks which drone UUID is currently working on which BlockPos to prevent duplicate assignments. */
-    private final Map<BlockPos, UUID> assignedPositions = new ConcurrentHashMap<>();
-    
-    /** Flag used to trigger network synchronization of deconstruction overlays to clients. */
-    private boolean dirty = false;
 
-    /**
-     * Retrieves or creates the job manager for a specific dimension.
-     */
+    // Tracks the final construction intent for a deconstruction job
+    private final Map<BlockPos, BlockState> jobFinalStates = new ConcurrentHashMap<>();
+
+    // Scalability-optimized assignment tracking with chunk-based indexing
+    private final Map<BlockPos, UUID> assignedPositions = new ConcurrentHashMap<>();
+    private final Map<Long, Set<BlockPos>> assignedInChunk = new ConcurrentHashMap<>(); // Track assignments per chunk for efficient cleanup
+
+    private boolean dirty = false;
+    private GhostJobSavedData savedData = null;
+
     public static GhostJobManager get(Level level) {
-        return INSTANCES.computeIfAbsent(level, k -> new GhostJobManager());
+        return INSTANCES.computeIfAbsent(level, k -> {
+            GhostJobManager manager = new GhostJobManager();
+            if (!level.isClientSide() && level instanceof ServerLevel serverLevel) {
+                manager.savedData = GhostJobSavedData.getOrCreate(serverLevel, manager);
+            }
+            return manager;
+        });
     }
 
-    /**
-     * Registers or updates a job for a specific block position.
-     * 
-     * @param pos The position of the job.
-     * @param state The current state of the ghost (determines which queue it enters).
-     * @param target The BlockState to be placed upon completion (for construction).
-     */
     public void registerJob(BlockPos pos, GhostBlockEntity.GhostState state, BlockState target) {
         long key = ChunkPos.asLong(pos);
         pos = pos.immutable();
-        
-        // Only clear assignment if the state implies no drone is working on it.
-        // Active states (ASSIGNED, FETCHING, INCOMING) preserve their drone ID.
-        boolean clearAssignment = (state == GhostBlockEntity.GhostState.UNASSIGNED 
-                                || state == GhostBlockEntity.GhostState.TO_REMOVE 
-                                || state == GhostBlockEntity.GhostState.MISSING_ITEMS);
-        
+        boolean clearAssignment = (state == GhostBlockEntity.GhostState.UNASSIGNED
+                || state == GhostBlockEntity.GhostState.TO_REMOVE
+                || state == GhostBlockEntity.GhostState.MISSING_ITEMS);
+
         removeFromAllMaps(pos, clearAssignment);
 
         if (state == GhostBlockEntity.GhostState.TO_REMOVE) {
             ghostRemovalJobs.computeIfAbsent(key, k -> Collections.synchronizedSet(new LinkedHashSet<>())).add(pos);
+            // PERSIST INTENT: If we are removing a ghost that has a target, keep that target!
+            if (target != null && !target.isAir()) constructionJobs.computeIfAbsent(key, k -> new ConcurrentHashMap<>()).put(pos, target);
             dirty = true;
+            markDataDirty();
         } else if (state == GhostBlockEntity.GhostState.UNASSIGNED) {
             constructionJobs.computeIfAbsent(key, k -> new ConcurrentHashMap<>()).put(pos, target);
+            markDataDirty();
         } else if (state == GhostBlockEntity.GhostState.MISSING_ITEMS) {
             hibernatingJobs.computeIfAbsent(key, k -> new ConcurrentHashMap<>()).put(pos, target);
+            markDataDirty();
         }
     }
 
-    /**
-     * Internal cleanup to remove a position from all task queues.
-     * @param clearAssignment If true, the drone lock on this position is released.
-     */
     private void removeFromAllMaps(BlockPos pos, boolean clearAssignment) {
         long key = ChunkPos.asLong(pos);
         if (constructionJobs.containsKey(key)) constructionJobs.get(key).remove(pos);
-        
-        if (ghostRemovalJobs.containsKey(key)) {
-             if (ghostRemovalJobs.get(key).remove(pos)) dirty = true;
-        }
-        
-        if (directDeconstructJobs.containsKey(key)) {
-             if (directDeconstructJobs.get(key).remove(pos) != null) dirty = true;
-        }
-        
+        if (ghostRemovalJobs.containsKey(key)) { if (ghostRemovalJobs.get(key).remove(pos)) dirty = true; }
+        if (directDeconstructJobs.containsKey(key)) { if (directDeconstructJobs.get(key).remove(pos) != null) dirty = true; }
         if (hibernatingJobs.containsKey(key)) hibernatingJobs.get(key).remove(pos);
         if (clearAssignment) {
             assignedPositions.remove(pos);
-        }
-    }
-
-    /**
-     * Registers a physical block for deconstruction.
-     * @param targetAfter The state to place after removal (usually AIR or a GHOST block).
-     */
-    public void registerDirectDeconstruct(BlockPos pos, BlockState targetAfter, Level level) {
-        long key = ChunkPos.asLong(pos);
-        pos = pos.immutable();
-        removeFromAllMaps(pos, true);
-        directDeconstructJobs.computeIfAbsent(key, k -> new ConcurrentHashMap<>()).put(pos, targetAfter);
-        dirty = true;
-    }
-
-    /**
-     * Completely removes all records of a job at the given position.
-     */
-    public void removeJob(BlockPos pos) {
-        removeFromAllMaps(pos, true);
-    }
-
-    /**
-     * Releases a drone's claim on a position.
-     */
-    public void releaseJob(BlockPos pos, UUID droneId) {
-        if (pos == null) return;
-        UUID current = assignedPositions.get(pos);
-        if (current != null && current.equals(droneId)) assignedPositions.remove(pos);
-    }
-
-    /**
-     * Checks if a specific drone is assigned to a position.
-     */
-    public boolean isAssignedTo(BlockPos pos, UUID droneId) {
-        if (pos == null || droneId == null) return false;
-        UUID current = assignedPositions.get(pos);
-        return current != null && current.equals(droneId);
-    }
-
-    /**
-     * Attempts to find a job for a drone near its current position.
-     * Uses a ring-based search pattern expanding outward up to 7 chunks.
-     */
-    public boolean hasAvailableJob(BlockPos center, int radius) {
-        int cx = SectionPos.blockToSectionCoord(center.getX());
-        int cz = SectionPos.blockToSectionCoord(center.getZ());
-        int chunkRadius = (radius >> 4) + 1;
-
-        for (int r = 0; r <= chunkRadius; r++) {
-            for (int x = cx - r; x <= cx + r; x++) {
-                for (int z = cz - r; z <= cz + r; z++) {
-                    if (r > 0 && Math.abs(x - cx) < r && Math.abs(z - cz) < r) continue;
-                    long key = ChunkPos.asLong(x, z);
-
-                    // Check Deconstruction
-                    if (directDeconstructJobs.containsKey(key)) {
-                        for (BlockPos p : directDeconstructJobs.get(key).keySet()) {
-                            if (!assignedPositions.containsKey(p)) return true;
-                        }
-                    }
-                    // Check Construction
-                    if (constructionJobs.containsKey(key)) {
-                        for (BlockPos p : constructionJobs.get(key).keySet()) {
-                            if (!assignedPositions.containsKey(p)) return true;
-                        }
-                    }
+            // Remove from chunk assignment tracking
+            Set<BlockPos> chunkAssignments = assignedInChunk.get(key);
+            if (chunkAssignments != null) {
+                chunkAssignments.remove(pos);
+                if (chunkAssignments.isEmpty()) {
+                    assignedInChunk.remove(key);
                 }
             }
+            jobFinalStates.remove(pos);
         }
-        return false;
+    }
+
+    public void registerDirectDeconstruct(BlockPos pos, BlockState targetAfter, Level level) {
+        registerDirectDeconstruct(pos, targetAfter, null, level);
+    }
+
+    public void registerDirectDeconstruct(BlockPos pos, BlockState targetAfter, BlockState finalState, Level level) {
+        long key = ChunkPos.asLong(pos);
+        pos = pos.immutable();
+        
+        // ZERO FORCE: Do NOT call setBlock here. 
+        // The original block stays in the world. 
+        // The drone will physically handle the transition.
+
+        removeFromAllMaps(pos, true);
+        directDeconstructJobs.computeIfAbsent(key, k -> new ConcurrentHashMap<>()).put(pos, targetAfter);
+        if (finalState != null) jobFinalStates.put(pos, finalState);
+        dirty = true;
+        markDataDirty();
+        
+        com.example.ghostlib.util.GhostLogger.log("JOB", "Registered Deconstruction at " + pos + " -> Target: " + targetAfter + " (Final: " + finalState + ")");
+    }
+
+    public void removeJob(BlockPos pos) {
+        removeFromAllMaps(pos, true);
+        markDataDirty();
     }
 
     public Job requestJob(BlockPos dronePos, UUID droneId, boolean canBuild) {
         int cx = SectionPos.blockToSectionCoord(dronePos.getX());
         int cz = SectionPos.blockToSectionCoord(dronePos.getZ());
-
         for (int r = 0; r <= 6; r++) {
             Job job = searchRing(cx, cz, r, dronePos, droneId, canBuild);
             if (job != null) return job;
@@ -192,25 +131,15 @@ public class GhostJobManager {
         return null;
     }
 
-    /**
-     * Internal search logic for a specific chunk ring distance.
-     */
     private Job searchRing(int cx, int cz, int r, BlockPos dronePos, UUID droneId, boolean canBuild) {
         for (int x = cx - r; x <= cx + r; x++) {
             for (int z = cz - r; z <= cz + r; z++) {
-                // Skip inner rings already searched
                 if (r > 0 && Math.abs(x - cx) < r && Math.abs(z - cz) < r) continue;
                 long key = ChunkPos.asLong(x, z);
-
-                // Priority 1: Direct Deconstruction (Clear the path)
                 Job j = findInMap(directDeconstructJobs.get(key), dronePos, droneId, JobType.DIRECT_DECONSTRUCT);
                 if (j != null) return j;
-
-                // Priority 2: Cleanup (Ghost Removal)
                 j = findInSet(ghostRemovalJobs.get(key), dronePos, droneId, JobType.GHOST_REMOVAL);
                 if (j != null) return j;
-
-                // Priority 3: Construction (Build)
                 if (canBuild) {
                     j = findInMap(constructionJobs.get(key), dronePos, droneId, JobType.CONSTRUCTION);
                     if (j != null) return j;
@@ -220,74 +149,76 @@ public class GhostJobManager {
         return null;
     }
 
-    /**
-     * Selects the closest available job from a Map.
-     */
     private Job findInMap(Map<BlockPos, BlockState> map, BlockPos dronePos, UUID droneId, JobType type) {
         if (map == null || map.isEmpty()) return null;
-        BlockPos best = null;
-        double minDist = Double.MAX_VALUE;
-        for (BlockPos p : map.keySet()) {
-            if (assignedPositions.containsKey(p)) continue;
-            double d = dronePos.distSqr(p);
-            if (d < minDist) { minDist = d; best = p; }
-        }
-        if (best != null) {
-            assignedPositions.put(best, droneId);
-            return new Job(best, type, map.get(best));
-        }
-        return null;
+        return map.keySet().stream()
+            .filter(p -> !assignedPositions.containsKey(p))
+            .sorted(Comparator.comparingDouble(p -> p.distSqr(dronePos)))
+            .filter(p -> {
+                // Use atomic operation for thread safety
+                UUID previous = assignedPositions.putIfAbsent(p, droneId);
+                if (previous == null) {
+                    // Successfully assigned, also track in chunk
+                    long chunkKey = ChunkPos.asLong(p);
+                    assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(p);
+                    return true;
+                }
+                return false; // Already assigned to another drone
+            })
+            .findFirst()
+            .map(p -> new Job(p, type, map.get(p), jobFinalStates.get(p)))
+            .orElse(null);
     }
 
-    /**
-     * Selects the closest available job from a Set.
-     */
     private Job findInSet(Set<BlockPos> set, BlockPos dronePos, UUID droneId, JobType type) {
         if (set == null || set.isEmpty()) return null;
-        BlockPos best = null;
-        double minDist = Double.MAX_VALUE;
+        List<BlockPos> candidates;
         synchronized (set) {
-            for (BlockPos p : set) {
-                if (assignedPositions.containsKey(p)) continue;
-                double d = dronePos.distSqr(p);
-                if (d < minDist) { minDist = d; best = p; }
-            }
+            candidates = set.stream().filter(p -> !assignedPositions.containsKey(p))
+                .sorted(Comparator.comparingDouble(p -> p.distSqr(dronePos))).toList();
         }
-        if (best != null) {
-            assignedPositions.put(best, droneId);
-            return new Job(best, type, Blocks.AIR.defaultBlockState());
-        }
-        return null;
+        return candidates.stream()
+            .filter(p -> {
+                // Use atomic operation for thread safety
+                UUID previous = assignedPositions.putIfAbsent(p, droneId);
+                if (previous == null) {
+                    // Successfully assigned, also track in chunk
+                    long chunkKey = ChunkPos.asLong(p);
+                    assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(p);
+                    return true;
+                }
+                return false; // Already assigned to another drone
+            })
+            .findFirst()
+            .map(p -> new Job(p, type, Blocks.AIR.defaultBlockState(), null))
+            .orElse(null);
     }
 
-    /**
-     * Ticking logic for maintenance tasks (Wakeup, Network Sync).
-     */
     public void tick(Level level) {
         if (level.isClientSide) return;
-        
-        // Sync deconstruction overlays only if changes occurred or periodically as fallback.
+
+        // Performance monitoring - log stats every 10 seconds (200 ticks)
+        if (level.getGameTime() % 200 == 0) {
+            int totalJobs = getTotalJobCount();
+            int assignedJobs = getAssignedJobCount();
+            int chunksWithJobs = getTotalChunksWithJobs();
+
+            if (totalJobs > 1000) { // Only log if we have significant load
+                com.example.ghostlib.util.GhostLogger.performance("JobManager Stats - Total: " + totalJobs + ", Assigned: " + assignedJobs + ", Chunks: " + chunksWithJobs);
+            }
+
+            wakeUpHibernatingJobs(level);
+        }
+
         if (dirty || level.getGameTime() % 100 == 0) {
             syncToClients(level);
             dirty = false;
         }
-
-        // Wake up hibernating jobs every 10 seconds (200 ticks)
-        if (level.getGameTime() % 200 == 0) {
-            wakeUpHibernatingJobs(level);
-        }
     }
 
-    /**
-     * Moves jobs from hibernating status back to active status, triggering a retry by drones.
-     */
     private void wakeUpHibernatingJobs(Level level) {
-        for (Map.Entry<Long, Map<BlockPos, BlockState>> entry : hibernatingJobs.entrySet()) {
-            Map<BlockPos, BlockState> jobs = entry.getValue();
-            if (jobs.isEmpty()) continue;
-
-            for (Map.Entry<BlockPos, BlockState> job : jobs.entrySet()) {
-                BlockPos pos = job.getKey();
+        for (var jobs : hibernatingJobs.values()) {
+            for (BlockPos pos : jobs.keySet()) {
                 if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
                     gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                 } else {
@@ -297,18 +228,14 @@ public class GhostJobManager {
         }
     }
 
-    /**
-     * Synchronizes the deconstruction job list to all players in the dimension.
-     * This allows the client-side renderer to draw the red wireframe overlays.
-     */
     public void syncToClients(Level level) {
         if (level.isClientSide) return;
-        Map<BlockPos, Boolean> active = new HashMap<>();
-        for (Map<BlockPos, BlockState> map : directDeconstructJobs.values()) {
-            for (BlockPos p : map.keySet()) active.put(p, true);
+        Map<BlockPos, Integer> active = new HashMap<>();
+        for (var map : directDeconstructJobs.values()) {
+            for (var entry : map.entrySet()) active.put(entry.getKey(), Block.getId(entry.getValue()));
         }
-        for (Set<BlockPos> set : ghostRemovalJobs.values()) {
-            synchronized (set) { for (BlockPos p : set) active.put(p, true); }
+        for (var set : ghostRemovalJobs.values()) {
+            synchronized (set) { for (BlockPos p : set) active.put(p, Block.getId(Blocks.AIR.defaultBlockState())); }
         }
         net.neoforged.neoforge.network.PacketDistributor.sendToAllPlayers(new com.example.ghostlib.network.payload.S2CSyncDeconstructionPacket(active));
     }
@@ -318,10 +245,112 @@ public class GhostJobManager {
         return directDeconstructJobs.containsKey(key) && directDeconstructJobs.get(key).containsKey(pos);
     }
 
-    public Map<Long, Map<BlockPos, BlockState>> getDirectDeconstructJobs() { return directDeconstructJobs; }
     public BlockState getTargetAfterDeconstruct(BlockPos pos) {
         long key = ChunkPos.asLong(pos);
         Map<BlockPos, BlockState> map = directDeconstructJobs.get(key);
         return map != null ? map.get(pos) : null;
     }
+
+    public boolean isAssignedTo(BlockPos pos, UUID droneId) {
+        UUID current = assignedPositions.get(pos);
+        return current != null && current.equals(droneId);
+    }
+
+    public void releaseJob(BlockPos pos, UUID droneId) {
+        UUID current = assignedPositions.get(pos);
+        if (current != null && current.equals(droneId)) {
+            assignedPositions.remove(pos);
+            // Also remove from chunk assignment tracking
+            long chunkKey = ChunkPos.asLong(pos);
+            Set<BlockPos> chunkAssignments = assignedInChunk.get(chunkKey);
+            if (chunkAssignments != null) {
+                chunkAssignments.remove(pos);
+                if (chunkAssignments.isEmpty()) {
+                    assignedInChunk.remove(chunkKey);
+                }
+            }
+        }
+    }
+
+    public boolean hasAvailableJob(BlockPos center, int radius) {
+        int cx = SectionPos.blockToSectionCoord(center.getX());
+        int cz = SectionPos.blockToSectionCoord(center.getZ());
+        int chunkRadius = (radius >> 4) + 1;
+        for (int r = 0; r <= chunkRadius; r++) {
+            for (int x = cx - r; x <= cx + r; x++) {
+                for (int z = cz - r; z <= cz + r; z++) {
+                    if (r > 0 && Math.abs(x - cx) < r && Math.abs(z - cz) < r) continue;
+                    long key = ChunkPos.asLong(x, z);
+                    if (directDeconstructJobs.containsKey(key) && directDeconstructJobs.get(key).keySet().stream().anyMatch(p -> !assignedPositions.containsKey(p))) return true;
+                    if (constructionJobs.containsKey(key) && constructionJobs.get(key).keySet().stream().anyMatch(p -> !assignedPositions.containsKey(p))) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public void releaseAssignmentsInChunk(long chunkPos) {
+        // Use the chunk assignment tracking for efficient cleanup
+        Set<BlockPos> positionsToRelease = assignedInChunk.remove(chunkPos);
+        if (positionsToRelease != null) {
+            for (BlockPos pos : positionsToRelease) {
+                assignedPositions.remove(pos);
+            }
+        }
+    }
+
+    public void restoreAssignment(BlockPos pos, UUID droneId) {
+        assignedPositions.put(pos, droneId);
+        // Also track in chunk assignment tracking
+        long chunkKey = ChunkPos.asLong(pos);
+        assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(pos);
+    }
+
+    public Map<BlockPos, BlockState> getConstructionJobs() {
+        Map<BlockPos, BlockState> res = new HashMap<>();
+        for (var m : constructionJobs.values()) res.putAll(m);
+        return res;
+    }
+
+    public Map<Long, Map<BlockPos, BlockState>> getDirectDeconstructJobs() {
+        return directDeconstructJobs;
+    }
+
+    public Map<BlockPos, BlockState> getHibernatingJobs() {
+        Map<BlockPos, BlockState> res = new HashMap<>();
+        for (var m : hibernatingJobs.values()) res.putAll(m);
+        return res;
+    }
+
+    private void markDataDirty() { if (savedData != null) savedData.markDirty(); }
+    
+    public Map<Long, Map<BlockPos, BlockState>> getConstructionJobsMap() { return constructionJobs; }
+    public Map<Long, Set<BlockPos>> getGhostRemovalJobsMap() { return ghostRemovalJobs; }
+    public Map<Long, Map<BlockPos, BlockState>> getHibernatingJobsMap() { return hibernatingJobs; }
+    public Map<BlockPos, UUID> getAssignments() { return new HashMap<>(assignedPositions); }
+    public Map<BlockPos, BlockState> getJobFinalStates() { return jobFinalStates; }
+
+    // Performance monitoring methods
+    public int getTotalJobCount() {
+        int count = 0;
+        for (var map : constructionJobs.values()) count += map.size();
+        for (var set : ghostRemovalJobs.values()) count += set.size();
+        for (var map : directDeconstructJobs.values()) count += map.size();
+        for (var map : hibernatingJobs.values()) count += map.size();
+        return count;
+    }
+
+    public int getAssignedJobCount() {
+        return assignedPositions.size();
+    }
+
+    public int getTotalChunksWithJobs() {
+        Set<Long> allChunks = new HashSet<>();
+        allChunks.addAll(constructionJobs.keySet());
+        allChunks.addAll(ghostRemovalJobs.keySet());
+        allChunks.addAll(directDeconstructJobs.keySet());
+        allChunks.addAll(hibernatingJobs.keySet());
+        return allChunks.size();
+    }
 }
+    

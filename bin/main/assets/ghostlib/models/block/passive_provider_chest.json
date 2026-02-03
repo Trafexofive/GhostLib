@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "ghostlib:block/passive_provider_chest"
+  }
+}

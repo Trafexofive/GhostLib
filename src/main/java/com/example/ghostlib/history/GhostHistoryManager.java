@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -162,31 +163,41 @@ public class GhostHistoryManager {
         try {
             for (StateChange change : entry.changes) {
                 BlockState targetState = isUndo ? change.oldState : change.newState;
+                
+                // PERFORMANCE & UX OPTIMIZATION: "Debris Exclusion"
+                // When placing a structure, drones often clear away grass, snow, or flowers.
+                // Reverting the placement should logically result in a clean area, not 
+                // a construction queue to "re-plant" every individual piece of grass.
+                // We treat all 'replaceable' blocks as Air during Undo.
+                if (isUndo && targetState.canBeReplaced(new net.minecraft.world.item.context.BlockPlaceContext(player, net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY, new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.ZERO, net.minecraft.core.Direction.UP, change.pos, false)))) {
+                    targetState = Blocks.AIR.defaultBlockState();
+                }
+
                 BlockPos pos = change.pos;
                 BlockState currentWorldState = level.getBlockState(pos);
 
-                jobManager.removeJob(pos);
-
+                // ZERO FORCE: Order a deconstruction job for anything in the way.
+                // ZERO FORCE: Order a deconstruction job for anything in the way.
                 if (targetState.isAir()) {
-                    // We want Air.
-                    // If world has a block (that isn't air), Mark for Deconstruction.
-                    if (!currentWorldState.isAir()) {
+                    // We want to revert to AIR (Removal).
+                    if (!currentWorldState.isAir() && !(currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock)) {
+                        // Real block in way: Mark for deconstruction
                         jobManager.registerDirectDeconstruct(pos, Blocks.AIR.defaultBlockState(), level);
+                    } else if (currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock) {
+                        // If it's already a ghost, we can just delete it immediately.
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
                     }
                 } else {
-                    // We want a Block.
-                    // If world is different (Air or Wrong Block), Place Ghost.
-                    // If world matches target, do nothing (Block already there).
+                    // We want to revert to a BLOCK (Placement).
                     if (!currentWorldState.equals(targetState)) {
-                        level.setBlock(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
-                        if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
-                            gbe.setTargetState(targetState);
-                            
-                            // If there is an existing block that isn't the target (and isn't Air), mark it as captured for removal
-                            if (!currentWorldState.isAir() && !(currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock)) {
-                                gbe.setCapturedState(currentWorldState);
-                                gbe.setState(GhostBlockEntity.GhostState.TO_REMOVE);
-                            } else {
+                        if (!currentWorldState.isAir() && !(currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock)) {
+                            // Block in the way: Deconstruct it, then the drone will place the Ghost marker.
+                            jobManager.registerDirectDeconstruct(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), targetState, level);
+                        } else {
+                            // Area is Air or already a ghost marker. Place/Update the marker.
+                            level.setBlock(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
+                            if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
+                                gbe.setTargetState(targetState);
                                 gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                             }
                         }

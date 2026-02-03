@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "type=passive_provider": { "model": "ghostlib:block/logistical_chest_passive_provider" },
+    "type=requester": { "model": "ghostlib:block/logistical_chest_requester" },
+    "type=storage": { "model": "ghostlib:block/logistical_chest_storage" },
+    "type=buffer": { "model": "ghostlib:block/logistical_chest_buffer" }
+  }
+}
