@@ -30,7 +30,7 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
     public void onLoad() {
         super.onLoad();
         if (level != null && !level.isClientSide) {
-            LogisticsNetworkManager.get(level).joinNetwork(worldPosition, 1);
+            LogisticsNetworkManager.get(level).joinOrCreateNetwork(worldPosition, level);
         }
     }
 

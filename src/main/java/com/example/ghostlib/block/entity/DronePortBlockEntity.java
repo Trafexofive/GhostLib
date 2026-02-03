@@ -65,8 +65,7 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
     public void onLoad() {
         super.onLoad();
         if (level != null && !level.isClientSide) {
-            // Default to network 1 for now
-            LogisticsNetworkManager.get(level).joinNetwork(worldPosition, 1);
+            LogisticsNetworkManager.get(level).joinOrCreateNetwork(worldPosition, level);
         }
     }
 

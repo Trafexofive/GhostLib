@@ -7,8 +7,10 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,8 +26,8 @@ public class LogisticsNetworkManager extends SavedData {
     private final Map<Integer, Set<BlockPos>> networkMembers = new HashMap<>();
     private final Map<BlockPos, Integer> posToNetworkId = new HashMap<>();
     private int nextId = 1;
-
     public LogisticsNetworkManager() {}
+
 
     public static LogisticsNetworkManager get(Level level) {
         if (level instanceof ServerLevel sl) {
@@ -78,10 +80,63 @@ public class LogisticsNetworkManager extends SavedData {
         return tag;
     }
 
+    /**
+     * Join a specific network by ID
+     */
     public void joinNetwork(BlockPos pos, int id) {
         leaveNetwork(pos);
         networkMembers.computeIfAbsent(id, k -> new HashSet<>()).add(pos);
         posToNetworkId.put(pos, id);
+        setDirty();
+    }
+
+    /**
+     * Automatically assign to an existing network if adjacent, or create a new one
+     */
+    public int joinOrCreateNetwork(BlockPos pos, Level level) {
+        leaveNetwork(pos);
+
+        // Look for adjacent network members to join their network
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                    BlockPos neighborPos = pos.offset(dx, dy, dz);
+                    Integer neighborNetworkId = posToNetworkId.get(neighborPos);
+                    if (neighborNetworkId != null) {
+                        // Join the neighbor's network
+                        networkMembers.computeIfAbsent(neighborNetworkId, k -> new HashSet<>()).add(pos);
+                        posToNetworkId.put(pos, neighborNetworkId);
+                        setDirty();
+                        return neighborNetworkId;
+                    }
+                }
+            }
+        }
+
+        // No adjacent networks found, create a new one
+        int newId = nextId++;
+        networkMembers.computeIfAbsent(newId, k -> new HashSet<>()).add(pos);
+        posToNetworkId.put(pos, newId);
+        setDirty();
+        return newId;
+    }
+
+    /**
+     * Merge two networks together
+     */
+    public void mergeNetworks(int sourceId, int targetId) {
+        if (sourceId == targetId) return;
+
+        Set<BlockPos> sourceMembers = networkMembers.remove(sourceId);
+        if (sourceMembers != null) {
+            Set<BlockPos> targetMembers = networkMembers.computeIfAbsent(targetId, k -> new HashSet<>());
+            for (BlockPos pos : sourceMembers) {
+                targetMembers.add(pos);
+                posToNetworkId.put(pos, targetId);
+            }
+        }
         setDirty();
     }
 
