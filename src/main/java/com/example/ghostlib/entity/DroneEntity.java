@@ -394,7 +394,10 @@ public class DroneEntity extends PathfinderMob {
         // Try to find job with backoff (Port drones check faster)
         int checkInterval = getMode() == DroneMode.PORT ? 10 : (20 + noJobBackoff * 10);
         if (this.tickCount % checkInterval == 0) {
-            this.droneState = DroneState.FINDING_JOB;
+            // Only switch to finding job if not already in a different state
+            if (this.droneState == DroneState.IDLE) {
+                this.droneState = DroneState.FINDING_JOB;
+            }
         }
     }
 
@@ -462,6 +465,7 @@ public class DroneEntity extends PathfinderMob {
             }
         } else {
             this.noJobBackoff = Math.min(this.noJobBackoff + 1, MAX_BACKOFF);
+            // Go back to idle to avoid busy-waiting and let the backoff logic in handleIdle manage job searching
             this.droneState = DroneState.IDLE;
         }
     }
@@ -521,7 +525,9 @@ public class DroneEntity extends PathfinderMob {
         }
         Player player = level().getNearestPlayer(this, 64);
         if (player == null) {
-            resetToIdle();
+            // No player available, try to find another option or go back to finding job
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " no player found for fetch, returning to job search");
+            this.droneState = DroneState.FINDING_JOB;
             return;
         }
         Vec3 fetchPos = player.position().add(0, player.getEyeHeight(), 0);
@@ -546,7 +552,9 @@ public class DroneEntity extends PathfinderMob {
                     if (!hasSpace()) {
                         GhostLib.LOGGER.warn("Drone inventory full, cannot take item from player");
                         this.droneState = DroneState.DUMPING_ITEMS;
-                        GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+                        if (currentJob != null) {
+                            GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+                        }
                         this.currentJob = null;
                         return;
                     }
@@ -569,15 +577,17 @@ public class DroneEntity extends PathfinderMob {
             }
             if (acquired) {
                 this.droneState = DroneState.TRAVELING_BUILD;
-                if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
+                if (currentJob != null && level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
                     if (gbe.getCurrentState() != GhostBlockEntity.GhostState.INCOMING)
                         gbe.setState(GhostBlockEntity.GhostState.INCOMING);
                 }
             } else {
-                if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
+                if (currentJob != null && level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
                     gbe.setState(GhostBlockEntity.GhostState.MISSING_ITEMS);
                 }
-                GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+                if (currentJob != null) {
+                    GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+                }
                 currentJob = null;
                 waitTicks = 100;
                 this.droneState = DroneState.IDLE;
@@ -1106,7 +1116,25 @@ public class DroneEntity extends PathfinderMob {
 
         Player player = level().getNearestPlayer(this, 32);
         if (player == null) {
-            this.droneState = DroneState.IDLE;
+            // No player available, but we still have items to dump
+            // Wait a bit then try again, or go back to idle if we're stuck
+            if (!isInventoryEmpty()) {
+                // We still have items to dump, stay in dumping state
+                // Add a counter to avoid infinite loops
+                if (idleChecks++ > 200) { // Reset after 10 seconds of trying
+                    idleChecks = 0;
+                    // If still can't find player, just drop items
+                    for (int i = 0; i < inventory.getContainerSize(); i++) {
+                        ItemStack stack = inventory.getItem(i);
+                        if (!stack.isEmpty() && !stack.is(ModItems.DRONE_SPAWN_EGG.get())) {
+                            Block.popResource(level(), blockPosition(), stack.copy());
+                            inventory.setItem(i, ItemStack.EMPTY);
+                        }
+                    }
+                }
+            } else {
+                this.droneState = DroneState.IDLE;
+            }
             return;
         }
         Vec3 dumpPos = player.position().add(0, player.getEyeHeight(), 0);
