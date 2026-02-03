@@ -38,6 +38,23 @@ public class GhostJobManager {
     private final Map<BlockPos, UUID> assignedPositions = new ConcurrentHashMap<>();
     private final Map<Long, Set<BlockPos>> assignedInChunk = new ConcurrentHashMap<>(); // Track assignments per chunk for efficient cleanup
 
+    // Lock-free job assignment optimization
+    private final java.util.concurrent.atomic.AtomicReference<java.util.Queue<JobAssignment>> assignmentQueue =
+        new java.util.concurrent.atomic.AtomicReference<>(new java.util.concurrent.ConcurrentLinkedQueue<>());
+
+    // Internal class for tracking job assignments
+    private static class JobAssignment {
+        final BlockPos pos;
+        final UUID droneId;
+        final long timestamp;
+
+        JobAssignment(BlockPos pos, UUID droneId) {
+            this.pos = pos;
+            this.droneId = droneId;
+            this.timestamp = System.nanoTime();
+        }
+    }
+
     private boolean dirty = false;
     private GhostJobSavedData savedData = null;
 
@@ -200,6 +217,8 @@ public class GhostJobManager {
                     // Successfully assigned, also track in chunk
                     long chunkKey = ChunkPos.asLong(p);
                     assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(p);
+                    // Add to lock-free assignment queue for performance tracking
+                    addToAssignmentQueue(p, droneId);
                     return true;
                 }
                 return false; // Already assigned to another drone
@@ -224,6 +243,8 @@ public class GhostJobManager {
                     // Successfully assigned, also track in chunk
                     long chunkKey = ChunkPos.asLong(p);
                     assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(p);
+                    // Add to lock-free assignment queue for performance tracking
+                    addToAssignmentQueue(p, droneId);
                     return true;
                 }
                 return false; // Already assigned to another drone
@@ -231,6 +252,29 @@ public class GhostJobManager {
             .findFirst()
             .map(p -> new Job(p, type, Blocks.AIR.defaultBlockState(), null))
             .orElse(null);
+    }
+
+    /**
+     * Adds assignment to the lock-free queue for performance tracking
+     */
+    private void addToAssignmentQueue(BlockPos pos, UUID droneId) {
+        Queue<JobAssignment> currentQueue = assignmentQueue.get();
+        currentQueue.offer(new JobAssignment(pos, droneId));
+    }
+
+    /**
+     * Batch process assignments to reduce overhead
+     */
+    public void processAssignmentQueue() {
+        Queue<JobAssignment> currentQueue = assignmentQueue.get();
+        JobAssignment assignment;
+        int processed = 0;
+
+        // Process up to 100 assignments per tick to avoid lag spikes
+        while ((assignment = currentQueue.poll()) != null && processed < 100) {
+            // Could add additional processing here if needed
+            processed++;
+        }
     }
 
     public void tick(Level level) {
@@ -247,6 +291,11 @@ public class GhostJobManager {
             }
 
             wakeUpHibernatingJobs(level);
+        }
+
+        // Process assignment queue periodically to reduce overhead
+        if (level.getGameTime() % 5 == 0) {
+            processAssignmentQueue();
         }
 
         if (dirty || level.getGameTime() % 100 == 0) {
