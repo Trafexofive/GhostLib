@@ -288,16 +288,17 @@ public class DroneEntity extends PathfinderMob {
         if (getMode() == DroneMode.PORT && getPortPos().isPresent()) {
             BlockPos port = getPortPos().get();
             // Dock at the TOP of the controller
-            Vec3 dockPos = Vec3.atCenterOf(port).add(0, 0.5, 0); 
-            moveSmoothlyTo(dockPos, 0.8);
-            
+            Vec3 dockPos = Vec3.atCenterOf(port).add(0, 0.5, 0);
+            // Move faster when charging to return to port quickly
+            moveSmoothlyTo(dockPos, 1.0); // Increased speed from 0.8 to 1.0
+
             if (this.position().distanceTo(dockPos) < 1.0) {
                 if (level().getBlockEntity(port) instanceof IDronePort dp) {
                     // Charging
                     int charged = dp.chargeDrone(2000, false);
                     double maxEnergy = this.getAttributeValue(ModAttributes.MAX_ENERGY);
                     this.energy = Math.min(this.energy + charged, (int)maxEnergy);
-                    
+
                     // Item Swap while docked
                     if (!isInventoryEmpty()) {
                         tryDumpAtPort(port);
@@ -1081,7 +1082,7 @@ public class DroneEntity extends PathfinderMob {
 
                 if (hasNonEggs) {
                     // Retry or Idle-Hover near port to indicate "Full"
-                    moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 3.0, 0), 0.6);
+                    moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 3.0, 0), 0.8); // Increased speed
                     return;
                 }
 
@@ -1106,7 +1107,7 @@ public class DroneEntity extends PathfinderMob {
                 }
                 
                 // 5. Fallback: Idle on top of home port and charge
-                moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0), 0.6);
+                moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0), 0.8); // Increased speed
                 if (this.position().distanceTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0)) < 1.0) {
                     this.droneState = DroneState.CHARGING;
                 }

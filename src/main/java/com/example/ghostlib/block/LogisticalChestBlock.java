@@ -62,7 +62,7 @@ public class LogisticalChestBlock extends BaseEntityBlock {
                 player.openMenu(chest, pos);
             }
         }
-        return net.minecraft.world.InteractionResult.SUCCESS;
+        return net.minecraft.world.InteractionResult.sidedSuccess(level.isClientSide);
     }
 
     @Override
