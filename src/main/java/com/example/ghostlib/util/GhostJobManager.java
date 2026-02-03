@@ -121,6 +121,45 @@ public class GhostJobManager {
         markDataDirty();
     }
 
+    /**
+     * Safely complete a job by removing it and updating the ghost block entity state
+     */
+    public void completeJob(BlockPos pos, Level level) {
+        // Remove the job from all queues
+        removeFromAllMaps(pos, true);
+
+        // Update the ghost block entity state to reflect completion
+        if (level != null && level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
+            // Only update if the ghost block still exists
+            gbe.setRemoved(); // This will remove the job again, but safely
+        }
+
+        markDataDirty();
+    }
+
+    /**
+     * Check if a job still exists at the given position
+     */
+    public boolean jobExistsAt(BlockPos pos) {
+        long key = ChunkPos.asLong(pos);
+
+        // Check all job types
+        if (constructionJobs.containsKey(key) && constructionJobs.get(key).containsKey(pos)) {
+            return true;
+        }
+        if (ghostRemovalJobs.containsKey(key) && ghostRemovalJobs.get(key).contains(pos)) {
+            return true;
+        }
+        if (directDeconstructJobs.containsKey(key) && directDeconstructJobs.get(key).containsKey(pos)) {
+            return true;
+        }
+        if (hibernatingJobs.containsKey(key) && hibernatingJobs.get(key).containsKey(pos)) {
+            return true;
+        }
+
+        return false;
+    }
+
     public Job requestJob(BlockPos dronePos, UUID droneId, boolean canBuild) {
         int cx = SectionPos.blockToSectionCoord(dronePos.getX());
         int cz = SectionPos.blockToSectionCoord(dronePos.getZ());

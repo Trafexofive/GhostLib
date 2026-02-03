@@ -471,6 +471,15 @@ public class DroneEntity extends PathfinderMob {
             resetToIdle();
             return;
         }
+
+        // Verify the job still exists before proceeding
+        if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+            this.currentJob = null;
+            this.droneState = DroneState.FINDING_JOB;
+            return;
+        }
+
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
         if (hasItemInInventory(required)) {
             this.droneState = DroneState.TRAVELING_BUILD;
@@ -499,8 +508,9 @@ public class DroneEntity extends PathfinderMob {
                 // RE-VERIFY: Check if item is still there before taking
                 if (extractFromContainer(containerPos, required)) {
                     this.droneState = DroneState.TRAVELING_BUILD;
-                    if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe)
+                    if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
                         gbe.setState(GhostBlockEntity.GhostState.INCOMING);
+                    }
                 } else {
                     // Item gone! Release and look for another source or job.
                     com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " failed to fetch " + required.getItem().getName(required).getString() + " at " + containerPos + ". Item missing (Race).");
@@ -681,16 +691,26 @@ public class DroneEntity extends PathfinderMob {
             resetToIdle();
             return;
         }
+
+        // Verify the job still exists before proceeding
+        if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+            this.currentJob = null;
+            this.droneState = DroneState.FINDING_JOB;
+            return;
+        }
+
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
         if (!hasItemInInventory(required)) {
             this.droneState = DroneState.TRAVELING_FETCH;
             return;
         }
+
         moveSmoothlyTo(currentJob.pos().getCenter(), 0.7);
         double interactRange = this.getAttributeValue(ModAttributes.INTERACTION_RANGE);
         if (this.position().distanceTo(currentJob.pos().getCenter()) < interactRange) {
             BlockPos pos = currentJob.pos();
-            
+
             // VISUAL FEEDBACK: Cyan Laser for Build
             if (com.example.ghostlib.config.GhostLibConfig.RENDER_DRONE_BEAMS) {
                 spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 0.2f, 0.8f, 1.0f);
@@ -706,16 +726,26 @@ public class DroneEntity extends PathfinderMob {
             }
 
             BlockState worldState = level().getBlockState(pos);
-            
+
+            // Verify the job still exists and is valid before proceeding
+            if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
+                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job was claimed by another drone at " + pos + ", aborting build");
+                this.currentJob = null;
+                this.droneState = DroneState.FINDING_JOB;
+                return;
+            }
+
             // If the block is already what we want, just finish
             if (worldState.equals(currentJob.targetAfter())) {
-                GhostJobManager.get(level()).removeJob(pos);
+                // Complete the job properly
+                GhostJobManager.get(level()).completeJob(pos, level());
                 this.currentJob = null;
                 this.droneState = DroneState.IDLE;
                 return;
             }
 
             if (!worldState.isAir() && !worldState.canBeReplaced() && !(worldState.getBlock() instanceof GhostBlock)) {
+                // Register deconstruction job for the obstructing block
                 GhostJobManager.get(level()).registerDirectDeconstruct(pos, currentJob.targetAfter(), level());
                 this.currentJob = null;
                 this.droneState = DroneState.FINDING_JOB;
@@ -735,6 +765,7 @@ public class DroneEntity extends PathfinderMob {
                 this.inventory.setItem(slot, ItemStack.EMPTY);
             }
 
+            // Actually place the block
             this.level().setBlock(pos, currentJob.targetAfter(), 3);
 
             // Restore NBT Data (Only from the used item to prevent duplication)
@@ -755,10 +786,11 @@ public class DroneEntity extends PathfinderMob {
 
             this.playSound(com.example.ghostlib.registry.ModSounds.DRONE_WORK.get(), 1.0f, 1.0f);
 
-            GhostJobManager.get(level()).removeJob(pos);
+            // Complete the job properly
+            GhostJobManager.get(level()).completeJob(pos, level());
             double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
             this.energy -= (int)(WORK_COST / efficiency);
-            
+
             double workSpeed = this.getAttributeValue(ModAttributes.WORK_SPEED);
             this.lingerTicks = (int)(2 / workSpeed); // Faster linger
             this.currentJob = null;
@@ -776,6 +808,14 @@ public class DroneEntity extends PathfinderMob {
 
             }
 
+            // Verify the job still exists before proceeding
+            if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
+                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " deconstruct job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+                this.currentJob = null;
+                this.droneState = DroneState.FINDING_JOB;
+                return;
+            }
+
             moveSmoothlyTo(currentJob.pos().getCenter(), 0.6);
 
             double interactRange = this.getAttributeValue(ModAttributes.INTERACTION_RANGE);
@@ -790,7 +830,7 @@ public class DroneEntity extends PathfinderMob {
 
                             BlockState finalIntended = currentJob.finalState();
 
-                
+
 
                             // VISUAL FEEDBACK: Construct/Deconstruct Lasers
 
@@ -800,47 +840,56 @@ public class DroneEntity extends PathfinderMob {
 
                             }
 
-                
+                            // Verify the job still exists and is valid before proceeding
+                            if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
+                                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " deconstruct job was claimed by another drone at " + pos + ", aborting deconstruction");
+                                this.currentJob = null;
+                                this.droneState = DroneState.FINDING_JOB;
+                                return;
+                            }
+
+
 
                             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " physically breaking " + existing.getBlock().getName().getString() + " at " + pos);
 
-                
 
-    
+
+
 
                             // PHYSICAL WORK: Harvest and Break (Silent/Instant for performance)
 
-                
 
-    
+
+
 
                             harvest(pos, existing);
 
-                
 
-    
 
-                            level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3); 
 
-                
 
-    
+                            level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
 
-                
 
-                
 
-    
 
-                            GhostJobManager.get(level()).removeJob(pos);
 
-                
 
-    
 
-                
 
-                
+
+
+
+                            // Complete the deconstruction job properly
+                            GhostJobManager.get(level()).completeJob(pos, this.level());
+
+
+
+
+
+
+
+
 
                 if (targetAfter != null && !targetAfter.isAir()) {
 
@@ -868,7 +917,7 @@ public class DroneEntity extends PathfinderMob {
 
                 }
 
-                
+
 
                 double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
 
