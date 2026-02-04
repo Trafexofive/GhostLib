@@ -1,56 +1,26 @@
 package com.example.ghostlib.block.entity;
 
-import com.example.ghostlib.registry.ModBlockEntities;
 import com.example.ghostlib.api.IDronePort;
-import com.example.ghostlib.util.LogisticsNetworkManager;
+import com.example.ghostlib.entity.DroneEntity;
+import com.example.ghostlib.registry.ModBlockEntities;
+import com.example.ghostlib.registry.ModEntities;
+import com.example.ghostlib.util.GhostJobManager;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.energy.EnergyStorage;
-import net.neoforged.neoforge.energy.IEnergyStorage;
-import net.neoforged.neoforge.items.ItemStackHandler;
-
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.items.ItemStackHandler;
+import java.util.UUID;
+import org.jetbrains.annotations.Nullable;
 
-public class DronePortBlockEntity extends BlockEntity implements IDronePort, MenuProvider {
-    private final EnergyStorage energy = new EnergyStorage(1000000, 10000, 10000);
-    private boolean isFormed = false;
-    private int checkTimer = 0;
-
-    protected final ContainerData data = new ContainerData() {
-        @Override
-        public int get(int index) {
-            return switch (index) {
-                case 0 -> energy.getEnergyStored();
-                case 1 -> isFormed ? 1 : 0;
-                default -> 0;
-            };
-        }
-
-        @Override
-        public void set(int index, int value) {
-            if (index == 1) isFormed = value != 0;
-        }
-
-        @Override
-        public int getCount() {
-            return 2;
-        }
-    };
-
-    private final ItemStackHandler inventory = new ItemStackHandler(27) {
-        @Override
-        public boolean isItemValid(int slot, ItemStack stack) {
-            return stack.is(com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get());
-        }
-
+public class DronePortBlockEntity extends BlockEntity implements IDronePort, MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
+    private final ItemStackHandler inventory = new ItemStackHandler(9) {
         @Override
         protected void onContentsChanged(int slot) {
             setChanged();
@@ -58,23 +28,38 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
     };
 
     public DronePortBlockEntity(BlockPos pos, BlockState state) {
-        super(com.example.ghostlib.registry.ModBlockEntities.DRONE_PORT.get(), pos, state);
+        super(ModBlockEntities.DRONE_PORT.get(), pos, state);
     }
 
     @Override
-    public void onLoad() {
-        super.onLoad();
-        if (level != null && !level.isClientSide) {
-            LogisticsNetworkManager.get(level).joinOrCreateNetwork(worldPosition, level);
-        }
+    public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(Player player) {
+        return com.lowdragmc.lowdraglib2.gui.ui.ModularUI.of(com.lowdragmc.lowdraglib2.gui.ui.UI.empty(), player);
     }
 
     @Override
-    public void setRemoved() {
-        if (level != null && !level.isClientSide) {
-            LogisticsNetworkManager.get(level).leaveNetwork(worldPosition);
+    public boolean isStillValid(Player player) {
+        return !isRemoved();
+    }
+
+    public static void tick(Level level, BlockPos pos, BlockState state, DronePortBlockEntity be) {
+        if (level.isClientSide) return;
+
+        if (level.getGameTime() % 20 == 0) {
+            be.trySpawnDrone();
         }
-        super.setRemoved();
+    }
+
+    public ItemStackHandler getInventory() {
+        return inventory;
+    }
+
+    public int getEnergy() {
+        return 1000000; // Mock energy
+    }
+
+    @Override
+    public boolean isValid() {
+        return !isRemoved();
     }
 
     @Override
@@ -82,162 +67,97 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
         return Component.literal("Drone Port");
     }
 
+    @Nullable
     @Override
-    public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        // We will create the menu class next
-        return new com.example.ghostlib.menu.DronePortMenu(containerId, inventory, this, data);
+    public AbstractContainerMenu createMenu(int windowId, Inventory playerInventory, Player player) {
+        return new com.example.ghostlib.menu.DronePortMenu(com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(), windowId, playerInventory, this);
     }
 
-    public static void tick(Level level, BlockPos pos, BlockState state, DronePortBlockEntity be) {
-        if (level.isClientSide) return;
+    private void trySpawnDrone() {
+        if (level == null) return;
+        GhostJobManager manager = GhostJobManager.get(level);
+        GhostJobManager.Job job = manager.requestJob(worldPosition, UUID.randomUUID(), true);
+        if (job == null) return;
 
-        if (be.checkTimer++ >= 40) {
-            be.checkTimer = 0;
-            be.validateStructure();
+        // Skip Halted ghosts
+        GhostBlockEntity gbe = null;
+        if (level.getBlockEntity(job.pos()) instanceof GhostBlockEntity foundGbe) {
+            gbe = foundGbe;
+            if (gbe.getCurrentState() == GhostBlockEntity.GhostState.MISSING_ITEMS) {
+                manager.releaseJob(job.pos(), gbe.getAssignedTo());
+                return;
+            }
         }
 
-        if (be.isFormed) {
-            // 1. Charging logic: Pull from floor below the multiblock
-            for (int x = -1; x <= 1; x++) {
-                for (int z = -1; z <= 1; z++) {
-                    BlockPos floorPos = pos.offset(x, -3, z);
-                    net.neoforged.neoforge.capabilities.BlockCapabilityCache<net.neoforged.neoforge.energy.IEnergyStorage, net.minecraft.core.Direction> cache = 
-                        net.neoforged.neoforge.capabilities.BlockCapabilityCache.create(
-                            net.neoforged.neoforge.capabilities.Capabilities.EnergyStorage.BLOCK,
-                            (net.minecraft.server.level.ServerLevel)level, floorPos, net.minecraft.core.Direction.UP);
+        for (int i = 0; i < inventory.getSlots(); i++) {
+            ItemStack stack = inventory.getStackInSlot(i);
+            if (stack.getItem() == com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get()) {
+                // Deployment Check: Can fulfill?
+                DroneEntity drone = new DroneEntity(ModEntities.DRONE.get(), level);
+                drone.setPos(worldPosition.getX() + 0.5, worldPosition.getY() + 1.0, worldPosition.getZ() + 0.5);
+                drone.setPort(worldPosition);
+                
+                boolean canFulfill = false;
+                if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
+                    ItemStack req = new ItemStack(job.targetAfter().getBlock().asItem());
+                    // 1. Check port inventory first
+                    ItemStack taken = extractItem(req, 1, true);
+                    if (!taken.isEmpty()) {
+                        canFulfill = true;
+                    } else {
+                        // 2. Scan logistics network (future feature, for now check nearby chests)
+                        // This logic should eventually use a global network lookup.
+                    }
+                } else {
+                    canFulfill = true;
+                }
+
+                if (canFulfill) {
+                    stack.shrink(1);
+                    UUID assignedId = gbe != null ? gbe.getAssignedTo() : UUID.randomUUID();
+                    manager.reassignJob(job.pos(), assignedId, drone.getUUID());
+                    drone.setInitialJob(job);
+                    level.addFreshEntity(drone);
+                } else {
+                    UUID assignedId = gbe != null ? gbe.getAssignedTo() : UUID.randomUUID();
+                    manager.releaseJob(job.pos(), assignedId);
                     
-                    net.neoforged.neoforge.energy.IEnergyStorage floorEnergy = cache.getCapability();
-                    if (floorEnergy != null && floorEnergy.canExtract()) {
-                        int space = be.energy.getMaxEnergyStored() - be.energy.getEnergyStored();
-                        if (space > 0) {
-                            int pulled = floorEnergy.extractEnergy(Math.min(2000, space), false);
-                            be.energy.receiveEnergy(pulled, false);
-                            if (pulled > 0) be.setChanged();
-                        }
+                    // Mark as halted if port can't fulfill
+                    if (gbe != null) {
+                        gbe.setState(GhostBlockEntity.GhostState.MISSING_ITEMS);
                     }
                 }
-            }
-
-            // 2. Auto-deployment logic
-            if (level.getGameTime() % 5 == 0 && be.energy.getEnergyStored() > 5000) {
-                be.tryDeployDrone();
+                return;
             }
         }
-    }
-    
-    // We'll hook into tryDeployDrone
-    private void tryDeployDrone() {
-        if (level == null || level.isClientSide) return;
-
-        // Check if there are jobs in range (64 blocks)
-        if (!com.example.ghostlib.util.GhostJobManager.get(level).hasAvailableJob(worldPosition, 64)) return;
-
-        int deployedThisTick = 0;
-        while (deployedThisTick < 3) {
-            // Check current drone count assigned to this port
-            long count = java.util.stream.StreamSupport.stream(((net.minecraft.server.level.ServerLevel)level).getEntities().getAll().spliterator(), false)
-                .filter(e -> e instanceof com.example.ghostlib.entity.DroneEntity d && 
-                             d.getMode() == com.example.ghostlib.entity.DroneEntity.DroneMode.PORT && 
-                             d.getPortPos().isPresent() && d.getPortPos().get().equals(worldPosition))
-                .count();
-
-            if (count < 10) { // Max 10 drones per port
-                boolean found = false;
-                for (int i = 0; i < inventory.getSlots(); i++) {
-                    ItemStack stack = inventory.getStackInSlot(i);
-                    if (!stack.isEmpty() && stack.is(com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get())) {
-                        // Deploy!
-                        com.example.ghostlib.entity.DroneEntity drone = new com.example.ghostlib.entity.DroneEntity(com.example.ghostlib.registry.ModEntities.DRONE.get(), level);
-                        drone.setPos(worldPosition.getX() + 0.5, worldPosition.getY() + 1.2, worldPosition.getZ() + 0.5);
-                        drone.setPort(worldPosition);
-                        level.addFreshEntity(drone);
-                        
-                        inventory.extractItem(i, 1, false);
-                        energy.extractEnergy(1000, false);
-                        level.playSound(null, worldPosition, net.minecraft.sounds.SoundEvents.BEACON_POWER_SELECT, net.minecraft.sounds.SoundSource.BLOCKS, 1.0f, 1.5f);
-                        deployedThisTick++;
-                        found = true;
-                        com.example.ghostlib.util.GhostLogger.multiblock("Drone Port at " + worldPosition + " deployed drone. Total active: " + (count + 1));
-                        break;
-                    }
-                }
-                if (!found) break;
-            } else {
-                break;
-            }
-        }
+        
+        // No drone or can't fulfill
+        UUID assignedId = gbe != null ? gbe.getAssignedTo() : UUID.randomUUID();
+        manager.releaseJob(job.pos(), assignedId); 
     }
 
     @Override
     public int chargeDrone(int amount, boolean simulate) {
-        return energy.extractEnergy(amount, simulate);
-    }
-
-    @Override
-    public ItemStack extractItem(ItemStack prototype, int amount, boolean simulate) {
-        for (int i = 0; i < inventory.getSlots(); i++) {
-            ItemStack stack = inventory.getStackInSlot(i);
-            if (!stack.isEmpty() && stack.is(prototype.getItem())) {
-                return inventory.extractItem(i, amount, simulate);
-            }
-        }
-        return ItemStack.EMPTY;
+        return amount; // Port has infinite energy for now
     }
 
     @Override
     public ItemStack insertItem(ItemStack stack, boolean simulate) {
         for (int i = 0; i < inventory.getSlots(); i++) {
             stack = inventory.insertItem(i, stack, simulate);
-            if (stack.isEmpty()) return ItemStack.EMPTY;
+            if (stack.isEmpty()) break;
         }
         return stack;
     }
 
-    private void validateStructure() {
-        if (level == null || level.isClientSide) return;
-        boolean wasFormed = isFormed;
-        isFormed = true;
-
-        // Standard 3x3x3 Multiblock Logic
-        // This controller is the TOP-CENTER block.
-        net.minecraft.resources.ResourceKey<net.minecraft.world.level.block.Block> casingKey = 
-            net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.BLOCK, 
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("factorycore", "machine_casing"));
-
-        for (int x = -1; x <= 1; x++) {
-            for (int y = -2; y <= 0; y++) {
-                for (int z = -1; z <= 1; z++) {
-                    if (x == 0 && y == 0 && z == 0) continue; // Skip controller itself
-
-                    BlockPos p = worldPosition.offset(x, y, z);
-                    BlockState s = level.getBlockState(p);
-                    
-                    if (!s.is(casingKey)) {
-                        // Accept solid blocks as fallback if casing not found, but AIR is a hard fail
-                        if (s.isAir()) {
-                            isFormed = false;
-                            break;
-                        }
-                    }
-                }
-                if (!isFormed) break;
-            }
-            if (!isFormed) break;
-        }
-
-        if (isFormed != wasFormed) {
-            setChanged();
-            if (isFormed) {
-                level.playSound(null, worldPosition, net.minecraft.sounds.SoundEvents.BEACON_ACTIVATE, net.minecraft.sounds.SoundSource.BLOCKS, 1.0f, 1.0f);
-            }
-        }
-    }
-
     @Override
-    public boolean isValid() {
-        return !isRemoved() && isFormed;
+    public ItemStack extractItem(ItemStack stack, int amount, boolean simulate) {
+        for (int i = 0; i < inventory.getSlots(); i++) {
+            ItemStack inSlot = inventory.getStackInSlot(i);
+            if (inSlot.is(stack.getItem())) {
+                return inventory.extractItem(i, amount, simulate);
+            }
+        }
+        return ItemStack.EMPTY;
     }
-    
-    public IEnergyStorage getEnergy() { return energy; }
-    public ItemStackHandler getInventory() { return inventory; }
 }

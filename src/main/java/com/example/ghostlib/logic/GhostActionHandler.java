@@ -23,15 +23,47 @@ public class GhostActionHandler {
         PLACE, DECONSTRUCT
     }
 
-    public static void handlePlacement(ServerLevel level, ServerPlayer player, BlockPos start, BlockPos end, int placementMode, int spacingX, int spacingZ, CompoundTag patternTag) {
-        if (patternTag == null || !patternTag.contains("Pattern")) return;
-        
+    public static void handlePlacement(ServerLevel level, ServerPlayer player, BlockPos start, BlockPos end,
+            int placementMode, int spacingX, int spacingZ, CompoundTag patternTag) {
+        if (patternTag == null || !patternTag.contains("Pattern"))
+            return;
+
         ListTag patternList = patternTag.getList("Pattern", 10);
         List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
         List<BlockPos> placementOrigins = new ArrayList<>();
-        
-        int bpSizeX = Math.max(1, patternTag.getInt("SizeX"));
-        int bpSizeZ = Math.max(1, patternTag.getInt("SizeZ"));
+
+        int bpSizeX = patternTag.contains("SizeX") ? Math.max(1, patternTag.getInt("SizeX")) : 0;
+        int bpSizeZ = patternTag.contains("SizeZ") ? Math.max(1, patternTag.getInt("SizeZ")) : 0;
+
+        // Robustness: Recalculate size if missing or invalid to prevent tiling overlap
+        // issues
+        if (bpSizeX <= 1 || bpSizeZ <= 1) {
+            int minX = 0, minZ = 0;
+            int maxX = 0, maxZ = 0;
+            boolean hasRel = false;
+            for (int i = 0; i < patternList.size(); i++) {
+                CompoundTag blockTag = patternList.getCompound(i);
+                if (blockTag.contains("Rel")) {
+                    BlockPos rel = NbtUtils.readBlockPos(blockTag, "Rel").orElse(BlockPos.ZERO);
+                    minX = Math.min(minX, rel.getX());
+                    minZ = Math.min(minZ, rel.getZ());
+                    maxX = Math.max(maxX, rel.getX());
+                    maxZ = Math.max(maxZ, rel.getZ());
+                    hasRel = true;
+                }
+            }
+            if (hasRel) {
+                // Use calculated size if stored size is suspicious (1) or missing (0)
+                if (bpSizeX <= 1)
+                    bpSizeX = Math.max(1, maxX - minX + 1);
+                if (bpSizeZ <= 1)
+                    bpSizeZ = Math.max(1, maxZ - minZ + 1);
+            } else {
+                // Fallback for empty patterns
+                bpSizeX = Math.max(1, bpSizeX);
+                bpSizeZ = Math.max(1, bpSizeZ);
+            }
+        }
 
         // Effective tiling step
         int stepX = bpSizeX + spacingX;
@@ -42,27 +74,29 @@ public class GhostActionHandler {
 
         // 1. Calculate Origins (Tiling)
         if (isGrid) { // Area Mode
-             int xDir = end.getX() >= start.getX() ? 1 : -1;
-             int zDir = end.getZ() >= start.getZ() ? 1 : -1;
-             int xRange = Math.abs(end.getX() - start.getX());
-             int zRange = Math.abs(end.getZ() - start.getZ());
-             for (int x = 0; x <= xRange; x += Math.max(1, stepX)) {
-                 for (int z = 0; z <= zRange; z += Math.max(1, stepZ)) {
-                     placementOrigins.add(start.offset(x * xDir, 0, z * zDir));
-                 }
-             }
+            int xDir = end.getX() >= start.getX() ? 1 : -1;
+            int zDir = end.getZ() >= start.getZ() ? 1 : -1;
+            int xRange = Math.abs(end.getX() - start.getX());
+            int zRange = Math.abs(end.getZ() - start.getZ());
+            for (int x = 0; x <= xRange; x += Math.max(1, stepX)) {
+                for (int z = 0; z <= zRange; z += Math.max(1, stepZ)) {
+                    placementOrigins.add(start.offset(x * xDir, 0, z * zDir));
+                }
+            }
         } else { // Line Mode
-             int dx = end.getX() - start.getX();
-             int dz = end.getZ() - start.getZ();
-             if (Math.abs(dx) >= Math.abs(dz)) {
-                 int steps = Math.abs(dx) / Math.max(1, stepX);
-                 int dir = dx >= 0 ? 1 : -1;
-                 for (int i=0; i<=steps; i++) placementOrigins.add(start.offset(i * stepX * dir, 0, 0));
-             } else {
-                 int steps = Math.abs(dz) / Math.max(1, stepZ);
-                 int dir = dz >= 0 ? 1 : -1;
-                 for (int i=0; i<=steps; i++) placementOrigins.add(start.offset(0, 0, i * stepZ * dir));
-             }
+            int dx = end.getX() - start.getX();
+            int dz = end.getZ() - start.getZ();
+            if (Math.abs(dx) >= Math.abs(dz)) {
+                int steps = Math.abs(dx) / Math.max(1, stepX);
+                int dir = dx >= 0 ? 1 : -1;
+                for (int i = 0; i <= steps; i++)
+                    placementOrigins.add(start.offset(i * stepX * dir, 0, 0));
+            } else {
+                int steps = Math.abs(dz) / Math.max(1, stepZ);
+                int dir = dz >= 0 ? 1 : -1;
+                for (int i = 0; i <= steps; i++)
+                    placementOrigins.add(start.offset(0, 0, i * stepZ * dir));
+            }
         }
 
         // 2. Execute Placement
@@ -70,8 +104,10 @@ public class GhostActionHandler {
             for (int i = 0; i < patternList.size(); i++) {
                 CompoundTag blockTag = patternList.getCompound(i);
                 BlockPos rel = NbtUtils.readBlockPos(blockTag, "Rel").orElse(BlockPos.ZERO);
-                BlockState bpState = NbtUtils.readBlockState(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), blockTag.getCompound("State"));
-                
+                BlockState bpState = NbtUtils.readBlockState(
+                        level.holderLookup(net.minecraft.core.registries.Registries.BLOCK),
+                        blockTag.getCompound("State"));
+
                 BlockPos target = origin.offset(rel);
                 BlockState worldState = level.getBlockState(target);
 
@@ -84,14 +120,15 @@ public class GhostActionHandler {
                         if (isForce) {
                             // Order deconstruction, then the ghost marker.
                             changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
-                            GhostJobManager.get(level).registerDirectDeconstruct(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), bpState, level);
+                            GhostJobManager.get(level).registerDirectDeconstruct(target,
+                                    ModBlocks.GHOST_BLOCK.get().defaultBlockState(), bpState, level);
                         }
                         // If not forcing, we skip obstructed positions.
                     } else {
                         // Area is Air or a Ghost marker. Safe to place/update the marker.
                         changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState,
                                 ModBlocks.GHOST_BLOCK.get().defaultBlockState()));
-                        
+
                         level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
                         if (level.getBlockEntity(target) instanceof GhostBlockEntity ghost) {
                             ghost.setTargetState(bpState);
@@ -108,19 +145,22 @@ public class GhostActionHandler {
     }
 
     public static void executeDeconstruction(ServerLevel level, ServerPlayer player, BlockPos start, BlockPos end) {
-         BlockPos min = new BlockPos(Math.min(start.getX(), end.getX()), Math.min(start.getY(), end.getY()), Math.min(start.getZ(), end.getZ()));
-         BlockPos max = new BlockPos(Math.max(start.getX(), end.getX()), Math.max(start.getY(), end.getY()), Math.max(start.getZ(), end.getZ()));
-         
-         List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
-         
-         for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-             BlockState worldState = level.getBlockState(p);
-             if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
-                 changes.add(new GhostHistoryManager.StateChange(p.immutable(), worldState, Blocks.AIR.defaultBlockState()));
-                 // Mark for deconstruction by swarm. 
-                 GhostJobManager.get(level).registerDirectDeconstruct(p, Blocks.AIR.defaultBlockState(), level);
-             }
-         }
-         GhostHistoryManager.recordAction(player, changes);
+        BlockPos min = new BlockPos(Math.min(start.getX(), end.getX()), Math.min(start.getY(), end.getY()),
+                Math.min(start.getZ(), end.getZ()));
+        BlockPos max = new BlockPos(Math.max(start.getX(), end.getX()), Math.max(start.getY(), end.getY()),
+                Math.max(start.getZ(), end.getZ()));
+
+        List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
+
+        for (BlockPos p : BlockPos.betweenClosed(min, max)) {
+            BlockState worldState = level.getBlockState(p);
+            if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
+                changes.add(
+                        new GhostHistoryManager.StateChange(p.immutable(), worldState, Blocks.AIR.defaultBlockState()));
+                // Mark for deconstruction by swarm.
+                GhostJobManager.get(level).registerDirectDeconstruct(p, Blocks.AIR.defaultBlockState(), level);
+            }
+        }
+        GhostHistoryManager.recordAction(player, changes);
     }
 }

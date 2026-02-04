@@ -12,11 +12,11 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 public class ModMenus {
     public static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, GhostLib.MODID);
 
-    public static final DeferredHolder<MenuType<?>, MenuType<DronePortMenu>> DRONE_PORT_MENU = MENUS.register("drone_port",
-            () -> IMenuTypeExtension.create(DronePortMenu::new));
+    public static final DeferredHolder<MenuType<?>, MenuType<com.lowdragmc.lowdraglib2.gui.holder.ModularUIContainerMenu>> DRONE_PORT_MENU = MENUS.register("drone_port",
+            () -> com.lowdragmc.lowdraglib2.gui.factory.LDMenuTypes.BLOCK_UI.get());
 
-    public static final DeferredHolder<MenuType<?>, MenuType<com.example.ghostlib.menu.LogisticalChestMenu>> LOGISTICAL_CHEST_MENU = MENUS.register("logistical_chest",
-            () -> IMenuTypeExtension.create(com.example.ghostlib.menu.LogisticalChestMenu::new));
+    public static final DeferredHolder<MenuType<?>, MenuType<com.lowdragmc.lowdraglib2.gui.holder.ModularUIContainerMenu>> LOGISTICAL_CHEST_MENU = MENUS.register("logistical_chest",
+            () -> com.lowdragmc.lowdraglib2.gui.factory.LDMenuTypes.BLOCK_UI.get());
 
     public static void register(IEventBus eventBus) {
         MENUS.register(eventBus);

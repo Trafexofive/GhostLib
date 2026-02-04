@@ -119,7 +119,9 @@ public class DroneEntity extends PathfinderMob {
 
     @Override
     public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source) {
-        if (source.is(net.minecraft.world.damagesource.DamageTypes.IN_WALL) || source.is(net.minecraft.world.damagesource.DamageTypes.CRAMMING)) return true;
+        if (source.is(net.minecraft.world.damagesource.DamageTypes.IN_WALL)
+                || source.is(net.minecraft.world.damagesource.DamageTypes.CRAMMING))
+            return true;
         return super.isInvulnerableTo(source);
     }
 
@@ -164,7 +166,8 @@ public class DroneEntity extends PathfinderMob {
     }
 
     @Override
-    protected void dropCustomDeathLoot(ServerLevel level, net.minecraft.world.damagesource.DamageSource source, boolean recentlyHit) {
+    protected void dropCustomDeathLoot(ServerLevel level, net.minecraft.world.damagesource.DamageSource source,
+            boolean recentlyHit) {
         super.dropCustomDeathLoot(level, source, recentlyHit);
         // Drop Inventory
         for (int i = 0; i < inventory.getContainerSize(); i++) {
@@ -175,6 +178,35 @@ public class DroneEntity extends PathfinderMob {
         }
         // Drop Self
         Block.popResource(level, blockPosition(), new ItemStack(ModItems.DRONE_SPAWN_EGG.get()));
+    }
+
+    @Override
+    public void travel(Vec3 travelVector) {
+        if (this.isEffectiveAi() || this.isControlledByLocalInstance()) {
+            if (this.noPhysics) {
+                // Use delta movement set by our smooth movement logic
+                Vec3 delta = this.getDeltaMovement();
+                this.move(net.minecraft.world.entity.MoverType.SELF, delta);
+                // Standard friction/drag
+                this.setDeltaMovement(delta.scale(0.91)); 
+            } else {
+                super.travel(travelVector);
+            }
+        }
+    }
+
+    public void setInitialJob(GhostJobManager.Job job) {
+        this.currentJob = job;
+        if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
+            ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
+            if (hasItemInInventory(required)) {
+                this.droneState = DroneState.TRAVELING_BUILD;
+            } else {
+                this.droneState = DroneState.TRAVELING_FETCH;
+            }
+        } else {
+            this.droneState = DroneState.TRAVELING_CLEAR;
+        }
     }
 
     private int jobWatchdog = 0;
@@ -197,7 +229,8 @@ public class DroneEntity extends PathfinderMob {
         if (currentJob != null) {
             jobWatchdog++;
             if (jobWatchdog > WATCHDOG_LIMIT) {
-                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job timed out at " + currentJob.pos() + ". Releasing.");
+                com.example.ghostlib.util.GhostLogger
+                        .drone("Drone " + this.getId() + " job timed out at " + currentJob.pos() + ". Releasing.");
                 resetToIdle();
                 return;
             }
@@ -219,7 +252,7 @@ public class DroneEntity extends PathfinderMob {
                     }
                 }
             }
-            
+
             if (!valid) {
                 // ORPHAN LOGIC: Find new port in same network
                 boolean rehomed = false;
@@ -234,7 +267,7 @@ public class DroneEntity extends PathfinderMob {
                         }
                     }
                 }
-                
+
                 if (!rehomed) {
                     GhostLib.LOGGER.warn("Drone orphaned and homeless. Deactivating.");
                     // Emergency Landing: Turn into item
@@ -242,7 +275,8 @@ public class DroneEntity extends PathfinderMob {
                     // Drop inventory
                     for (int i = 0; i < inventory.getContainerSize(); i++) {
                         ItemStack stack = inventory.getItem(i);
-                        if (!stack.isEmpty()) Block.popResource(level(), blockPosition(), stack);
+                        if (!stack.isEmpty())
+                            Block.popResource(level(), blockPosition(), stack);
                     }
                     this.discard();
                     return;
@@ -274,7 +308,7 @@ public class DroneEntity extends PathfinderMob {
         if (energy > 0) {
             if (this.getDeltaMovement().lengthSqr() > 0.001) {
                 double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
-                energy -= Math.max(1, (int)(FLY_COST / efficiency));
+                energy -= Math.max(1, (int) (FLY_COST / efficiency));
             }
             lowPowerMode = false;
         } else {
@@ -297,17 +331,18 @@ public class DroneEntity extends PathfinderMob {
                     // Charging
                     int charged = dp.chargeDrone(2000, false);
                     double maxEnergy = this.getAttributeValue(ModAttributes.MAX_ENERGY);
-                    this.energy = Math.min(this.energy + charged, (int)maxEnergy);
+                    this.energy = Math.min(this.energy + charged, (int) maxEnergy);
 
                     // Item Swap while docked
                     if (!isInventoryEmpty()) {
                         tryDumpAtPort(port);
                     }
 
-                    if (this.energy >= (int)maxEnergy * 0.9) {
+                    if (this.energy >= (int) maxEnergy * 0.9) {
                         // If fully charged AND idle, try to store self
                         if (idleChecks > 100 && isInventoryEmpty()) {
-                            ItemStack self = new ItemStack(com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get());
+                            ItemStack self = new ItemStack(
+                                    com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get());
                             if (dp.insertItem(self, true).isEmpty()) {
                                 dp.insertItem(self, false);
                                 this.discard();
@@ -338,7 +373,8 @@ public class DroneEntity extends PathfinderMob {
                 return;
             } else {
                 // Player drones check if they can fulfill a local job first
-                GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), false);
+                GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(),
+                        false);
                 if (job != null && job.type() == GhostJobManager.JobType.CONSTRUCTION) {
                     ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
                     if (hasItemInInventory(required)) {
@@ -392,13 +428,11 @@ public class DroneEntity extends PathfinderMob {
             }
         }
 
-        // Try to find job with backoff (Port drones check faster)
-        int checkInterval = getMode() == DroneMode.PORT ? 10 : (20 + noJobBackoff * 10);
-        if (this.tickCount % checkInterval == 0) {
-            // Only switch to finding job if not already in a different state
-            if (this.droneState == DroneState.IDLE) {
-                this.droneState = DroneState.FINDING_JOB;
-            }
+        // Try to find job with backoff (Capped at 100 ticks = 5 seconds)
+        int checkInterval = getMode() == DroneMode.PORT ? 10 : Math.min(100, 20 + noJobBackoff * 5);
+        if (this.tickCount % checkInterval == 0 || (this.droneState == DroneState.IDLE && idleChecks == 0)) {
+            // Priority Check: Switch to finding job immediately if we just became idle
+            this.droneState = DroneState.FINDING_JOB;
         }
     }
 
@@ -434,8 +468,12 @@ public class DroneEntity extends PathfinderMob {
     }
 
     private void handleFindingJob() {
-        GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(),
-                hasSpace());
+        if (currentJob != null) return;
+
+        // Drones can always build if they have energy. Space is only strictly required for deconstruction,
+        // but we'll let the job manager filter based on the canBuild flag which should be true if we want to build.
+        GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), true);
+        
         if (job != null) {
             this.currentJob = job;
             idleTicks = 0;
@@ -452,21 +490,32 @@ public class DroneEntity extends PathfinderMob {
                             gbe.setState(GhostBlockEntity.GhostState.INCOMING);
                         }
                     }
-                    com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " accepted CONSTRUCTION at " + job.pos());
                     return;
                 } else {
                     this.droneState = DroneState.TRAVELING_FETCH;
-                    com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " accepted FETCH for " + required.getItem().getName(required).getString() + " at " + job.pos());
+                    if (level().isLoaded(job.pos())) {
+                        if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                            gbe.setAssignedTo(this.getUUID());
+                            gbe.setState(GhostBlockEntity.GhostState.FETCHING);
+                        }
+                    }
                     return;
                 }
             } else if (job.type() == GhostJobManager.JobType.DIRECT_DECONSTRUCT) {
                 this.droneState = DroneState.TRAVELING_CLEAR;
-                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " accepted DECONSTRUCT at " + job.pos());
+                return;
+            } else if (job.type() == GhostJobManager.JobType.GHOST_REMOVAL) {
+                this.droneState = DroneState.TRAVELING_CLEAR;
+                if (level().isLoaded(job.pos())) {
+                    if (level().getBlockEntity(job.pos()) instanceof GhostBlockEntity gbe) {
+                        gbe.setAssignedTo(this.getUUID());
+                        gbe.setState(GhostBlockEntity.GhostState.REMOVING);
+                    }
+                }
                 return;
             }
         } else {
             this.noJobBackoff = Math.min(this.noJobBackoff + 1, MAX_BACKOFF);
-            // Go back to idle to avoid busy-waiting and let the backoff logic in handleIdle manage job searching
             this.droneState = DroneState.IDLE;
         }
     }
@@ -479,7 +528,8 @@ public class DroneEntity extends PathfinderMob {
 
         // Verify the job still exists before proceeding
         if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
-            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job no longer exists at "
+                    + currentJob.pos() + ", releasing and finding new job");
             this.currentJob = null;
             this.droneState = DroneState.FINDING_JOB;
             return;
@@ -518,7 +568,9 @@ public class DroneEntity extends PathfinderMob {
                     }
                 } else {
                     // Item gone! Release and look for another source or job.
-                    com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " failed to fetch " + required.getItem().getName(required).getString() + " at " + containerPos + ". Item missing (Race).");
+                    com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " failed to fetch "
+                            + required.getItem().getName(required).getString() + " at " + containerPos
+                            + ". Item missing (Race).");
                     this.droneState = DroneState.FINDING_JOB;
                 }
             }
@@ -527,7 +579,8 @@ public class DroneEntity extends PathfinderMob {
         Player player = level().getNearestPlayer(this, 64);
         if (player == null) {
             // No player available, try to find another option or go back to finding job
-            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " no player found for fetch, returning to job search");
+            com.example.ghostlib.util.GhostLogger
+                    .drone("Drone " + this.getId() + " no player found for fetch, returning to job search");
             this.droneState = DroneState.FINDING_JOB;
             return;
         }
@@ -598,7 +651,7 @@ public class DroneEntity extends PathfinderMob {
 
     private BlockPos findNearbyContainerWithItem(ItemStack stack) {
         BlockPos center = this.blockPosition();
-        
+
         // 1. Network Search (Prioritized by Factorio rules)
         if (networkId != null) {
             Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
@@ -607,14 +660,15 @@ public class DroneEntity extends PathfinderMob {
 
             for (BlockPos p : members) {
                 net.neoforged.neoforge.items.IItemHandler handler = level()
-                    .getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, p, null);
+                        .getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, p, null);
                 if (handler != null) {
                     boolean isProvider = false;
-                    if (level().getBlockEntity(p) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
+                    if (level().getBlockEntity(
+                            p) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
                         var type = lc.getChestType();
-                        if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.PASSIVE_PROVIDER || 
-                            type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.ACTIVE_PROVIDER ||
-                            type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
+                        if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.PASSIVE_PROVIDER ||
+                                type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.ACTIVE_PROVIDER ||
+                                type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
                             isProvider = true;
                         }
                     }
@@ -622,17 +676,21 @@ public class DroneEntity extends PathfinderMob {
                     for (int i = 0; i < handler.getSlots(); i++) {
                         if (handler.getStackInSlot(i).is(stack.getItem())) {
                             if (isProvider) {
-                                if (bestProvider == null || p.distSqr(center) < bestProvider.distSqr(center)) bestProvider = p.immutable();
+                                if (bestProvider == null || p.distSqr(center) < bestProvider.distSqr(center))
+                                    bestProvider = p.immutable();
                             } else {
-                                if (bestGeneric == null || p.distSqr(center) < bestGeneric.distSqr(center)) bestGeneric = p.immutable();
+                                if (bestGeneric == null || p.distSqr(center) < bestGeneric.distSqr(center))
+                                    bestGeneric = p.immutable();
                             }
                             break;
                         }
                     }
                 }
             }
-            if (bestProvider != null) return bestProvider;
-            if (bestGeneric != null) return bestGeneric;
+            if (bestProvider != null)
+                return bestProvider;
+            if (bestGeneric != null)
+                return bestGeneric;
         }
 
         // 2. Local Search (Fallback or Player Mode)
@@ -646,14 +704,15 @@ public class DroneEntity extends PathfinderMob {
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-rh, -rv, -rh), center.offset(rh, rv, rh))) {
             net.neoforged.neoforge.items.IItemHandler handler = level()
                     .getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
-            
+
             if (handler != null) {
                 // Priority Check: Is it a Logistical Provider?
                 boolean isProvider = false;
-                if (level().getBlockEntity(pos) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
+                if (level().getBlockEntity(
+                        pos) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
                     var type = lc.getChestType();
-                    if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.PASSIVE_PROVIDER || 
-                        type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
+                    if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.PASSIVE_PROVIDER ||
+                            type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
                         isProvider = true;
                     }
                 }
@@ -705,7 +764,8 @@ public class DroneEntity extends PathfinderMob {
 
         // Verify the job still exists before proceeding
         if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
-            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job no longer exists at "
+                    + currentJob.pos() + ", releasing and finding new job");
             this.currentJob = null;
             this.droneState = DroneState.FINDING_JOB;
             return;
@@ -713,13 +773,17 @@ public class DroneEntity extends PathfinderMob {
 
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
         if (!hasItemInInventory(required)) {
+            com.example.ghostlib.util.GhostLogger
+                    .drone("Drone " + this.getId() + " missing required item for build at " + currentJob.pos());
             this.droneState = DroneState.TRAVELING_FETCH;
             return;
         }
 
         moveSmoothlyTo(currentJob.pos().getCenter(), 0.7);
         double interactRange = this.getAttributeValue(ModAttributes.INTERACTION_RANGE);
-        if (this.position().distanceTo(currentJob.pos().getCenter()) < interactRange) {
+        double dist = this.position().distanceTo(currentJob.pos().getCenter());
+
+        if (dist < interactRange) {
             BlockPos pos = currentJob.pos();
 
             // VISUAL FEEDBACK: Cyan Laser for Build
@@ -737,10 +801,14 @@ public class DroneEntity extends PathfinderMob {
             }
 
             BlockState worldState = level().getBlockState(pos);
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " at build site " + pos
+                    + ", current block: " + worldState.getBlock().getName().getString() + ", target: "
+                    + currentJob.targetAfter().getBlock().getName().getString());
 
             // Verify the job still exists and is valid before proceeding
             if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
-                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job was claimed by another drone at " + pos + ", aborting build");
+                com.example.ghostlib.util.GhostLogger.drone(
+                        "Drone " + this.getId() + " job was claimed by another drone at " + pos + ", aborting build");
                 this.currentJob = null;
                 this.droneState = DroneState.FINDING_JOB;
                 return;
@@ -748,6 +816,8 @@ public class DroneEntity extends PathfinderMob {
 
             // If the block is already what we want, just finish
             if (worldState.equals(currentJob.targetAfter())) {
+                com.example.ghostlib.util.GhostLogger
+                        .drone("Drone " + this.getId() + " block already correct at " + pos + ", completing job");
                 // Complete the job properly
                 GhostJobManager.get(level()).completeJob(pos, level());
                 this.currentJob = null;
@@ -756,6 +826,8 @@ public class DroneEntity extends PathfinderMob {
             }
 
             if (!worldState.isAir() && !worldState.canBeReplaced() && !(worldState.getBlock() instanceof GhostBlock)) {
+                com.example.ghostlib.util.GhostLogger
+                        .drone("Drone " + this.getId() + " obstruction at " + pos + ", registering deconstruction");
                 // Register deconstruction job for the obstructing block
                 GhostJobManager.get(level()).registerDirectDeconstruct(pos, currentJob.targetAfter(), level());
                 this.currentJob = null;
@@ -766,6 +838,8 @@ public class DroneEntity extends PathfinderMob {
             // Find item in inventory (preferring one with NBT data)
             int slot = findBestSlot(currentJob.targetAfter().getBlock().asItem());
             if (slot == -1) {
+                com.example.ghostlib.util.GhostLogger
+                        .drone("Drone " + this.getId() + " item disappeared from inventory at " + pos);
                 // Unexpected: Inventory check passed earlier but item missing now?
                 this.droneState = DroneState.TRAVELING_FETCH;
                 return;
@@ -776,11 +850,38 @@ public class DroneEntity extends PathfinderMob {
                 this.inventory.setItem(slot, ItemStack.EMPTY);
             }
 
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " PLACING BLOCK at " + pos + ": "
+                    + currentJob.targetAfter().getBlock().getName().getString());
+
             // Actually place the block
-            this.level().setBlock(pos, currentJob.targetAfter(), 3);
+            boolean placed = this.level().setBlock(pos, currentJob.targetAfter(), 3);
+
+            if (!placed) {
+                com.example.ghostlib.util.GhostLogger
+                        .drone("ERROR: Drone " + this.getId() + " setBlock FAILED at " + pos);
+                // Return item to inventory
+                this.inventory.addItem(usedStack);
+                this.currentJob = null;
+                this.droneState = DroneState.FINDING_JOB;
+                return;
+            }
+
+            com.example.ghostlib.util.GhostLogger
+                    .drone("Drone " + this.getId() + " setBlock SUCCESS at " + pos + ", verifying...");
+
+            // Verify placement
+            BlockState verifyState = level().getBlockState(pos);
+            if (!verifyState.equals(currentJob.targetAfter())) {
+                com.example.ghostlib.util.GhostLogger
+                        .drone("ERROR: Drone " + this.getId() + " placement verification FAILED at " + pos + ", got "
+                                + verifyState.getBlock().getName().getString());
+            } else {
+                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " placement VERIFIED at " + pos);
+            }
 
             // Restore NBT Data (Only from the used item to prevent duplication)
-            // We do NOT use blueprint NBT (nbtToApply) here because that would create items from thin air.
+            // We do NOT use blueprint NBT (nbtToApply) here because that would create items
+            // from thin air.
             // Blueprint NBT is for reference or Creative Mode only.
             net.minecraft.world.level.block.entity.BlockEntity newBe = level().getBlockEntity(pos);
             if (newBe != null && usedStack.has(DataComponents.BLOCK_ENTITY_DATA)) {
@@ -800,127 +901,97 @@ public class DroneEntity extends PathfinderMob {
             // Complete the construction job properly
             GhostJobManager.get(level()).completeJob(pos, level());
             double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
-            this.energy -= (int)(WORK_COST / efficiency);
+            this.energy -= (int) (WORK_COST / efficiency);
 
             double workSpeed = this.getAttributeValue(ModAttributes.WORK_SPEED);
-            this.lingerTicks = (int)(2 / workSpeed); // Faster linger
+            this.lingerTicks = (int) (2 / workSpeed); // Faster linger
             this.currentJob = null;
             this.droneState = DroneState.FINDING_JOB; // Immediate re-check
         }
     }
 
-        private void handleTravelingClear() {
+    private void handleTravelingClear() {
 
-            if (currentJob == null) {
+        if (currentJob == null) {
 
-                resetToIdle();
+            resetToIdle();
 
-                return;
+            return;
+
+        }
+
+        // Verify the job still exists before proceeding
+        if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId()
+                    + " deconstruct job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+            this.currentJob = null;
+            this.droneState = DroneState.FINDING_JOB;
+            return;
+        }
+
+        moveSmoothlyTo(currentJob.pos().getCenter(), 0.6);
+        double interactRange = this.getAttributeValue(ModAttributes.INTERACTION_RANGE);
+        double dist = this.position().distanceTo(currentJob.pos().getCenter());
+
+        if (dist < interactRange) {
+
+            BlockPos pos = currentJob.pos();
+
+            BlockState existing = level().getBlockState(pos);
+
+            BlockState targetAfter = currentJob.targetAfter();
+
+            BlockState finalIntended = currentJob.finalState();
+
+            // VISUAL FEEDBACK: Construct/Deconstruct Lasers
+
+            if (com.example.ghostlib.config.GhostLibConfig.RENDER_DRONE_BEAMS) {
+
+                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 1.0f, 0.2f, 0.2f); // Red for
+                                                                                                   // Deconstruct
 
             }
 
-            // Verify the job still exists before proceeding
-            if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
-                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " deconstruct job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
+            // Verify the job still exists and is valid before proceeding
+            if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
+                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId()
+                        + " deconstruct job was claimed by another drone at " + pos + ", aborting deconstruction");
                 this.currentJob = null;
                 this.droneState = DroneState.FINDING_JOB;
                 return;
             }
 
-            moveSmoothlyTo(currentJob.pos().getCenter(), 0.6);
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " physically breaking "
+                    + existing.getBlock().getName().getString() + " at " + pos);
 
-            double interactRange = this.getAttributeValue(ModAttributes.INTERACTION_RANGE);
+            // PHYSICAL WORK: Harvest and Break (Silent/Instant for performance)
 
-            if (this.position().distanceTo(currentJob.pos().getCenter()) < interactRange) {
+            harvest(pos, existing);
 
-                BlockPos pos = currentJob.pos();
+            level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
 
-                BlockState existing = level().getBlockState(pos);
+            // Complete the deconstruction job properly
+            GhostJobManager.get(level()).completeJob(pos, this.level());
 
-                            BlockState targetAfter = currentJob.targetAfter();
+            if (targetAfter != null && !targetAfter.isAir()) {
 
-                            BlockState finalIntended = currentJob.finalState();
+                // Seed marker if necessary
 
+                level().setBlock(pos, targetAfter, 3);
 
+                if (targetAfter.getBlock() instanceof GhostBlock) {
 
-                            // VISUAL FEEDBACK: Construct/Deconstruct Lasers
+                    if (level().getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
 
-                            if (com.example.ghostlib.config.GhostLibConfig.RENDER_DRONE_BEAMS) {
+                        if (finalIntended != null && !finalIntended.isAir()) {
 
-                                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 1.0f, 0.2f, 0.2f); // Red for Deconstruct
+                            gbe.setTargetState(finalIntended);
 
-                            }
+                            gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
 
-                            // Verify the job still exists and is valid before proceeding
-                            if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
-                                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " deconstruct job was claimed by another drone at " + pos + ", aborting deconstruction");
-                                this.currentJob = null;
-                                this.droneState = DroneState.FINDING_JOB;
-                                return;
-                            }
-
-
-
-                            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " physically breaking " + existing.getBlock().getName().getString() + " at " + pos);
-
-
-
-
-
-                            // PHYSICAL WORK: Harvest and Break (Silent/Instant for performance)
-
-
-
-
-
-                            harvest(pos, existing);
-
-
-
-
-
-                            level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
-
-
-
-
-
-
-
-
-
-
-
-                            // Complete the deconstruction job properly
-                            GhostJobManager.get(level()).completeJob(pos, this.level());
-
-
-
-
-
-
-
-
-
-                if (targetAfter != null && !targetAfter.isAir()) {
-
-                    // Seed marker if necessary
-
-                    level().setBlock(pos, targetAfter, 3);
-
-                    if (targetAfter.getBlock() instanceof GhostBlock) {
-
-                        if (level().getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
-
-                            if (finalIntended != null && !finalIntended.isAir()) {
-
-                                gbe.setTargetState(finalIntended);
-
-                                gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
-
-                                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " seeded Ghost marker for " + finalIntended.getBlock().getName().getString() + " at " + pos);
-
-                            }
+                            com.example.ghostlib.util.GhostLogger
+                                    .drone("Drone " + this.getId() + " seeded Ghost marker for "
+                                            + finalIntended.getBlock().getName().getString() + " at " + pos);
 
                         }
 
@@ -928,23 +999,21 @@ public class DroneEntity extends PathfinderMob {
 
                 }
 
-
-
-                double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
-
-                this.energy -= (int)(WORK_COST / efficiency);
-
-                this.lingerTicks = 10;
-
-                this.currentJob = null;
-
-                this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
-
             }
+
+            double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
+
+            this.energy -= (int) (WORK_COST / efficiency);
+
+            this.lingerTicks = 10;
+
+            this.currentJob = null;
+
+            this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
 
         }
 
-    
+    }
 
     private void spawnBeam(Vec3 start, Vec3 end, float r, float g, float b) {
         if (level() instanceof ServerLevel sl) {
@@ -963,39 +1032,43 @@ public class DroneEntity extends PathfinderMob {
      * Executes a physical block break with high-fidelity data preservation.
      * 
      * SMART HARVEST (CarryOn Logic):
-     * If the block is a container, we capture its NBT and clear its internal 
-     * inventory BEFORE the block is broken. This prevents the items from 
-     * spilling into the world and ensures the drone picks up a single 
+     * If the block is a container, we capture its NBT and clear its internal
+     * inventory BEFORE the block is broken. This prevents the items from
+     * spilling into the world and ensures the drone picks up a single
      * 'saved' item that can be perfectly restored later.
      */
     private void harvest(BlockPos pos, BlockState state) {
         if (level() instanceof ServerLevel sl) {
-            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " harvesting " + state.getBlock().getName().getString() + " at " + pos);
+            com.example.ghostlib.util.GhostLogger.drone(
+                    "Drone " + this.getId() + " harvesting " + state.getBlock().getName().getString() + " at " + pos);
             net.minecraft.world.level.block.entity.BlockEntity be = level().getBlockEntity(pos);
-            
+
             // Smart Harvest: Handle Containers (Chests, IItemHandlers, etc.)
-            net.neoforged.neoforge.items.IItemHandler handler = sl.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
-            
+            net.neoforged.neoforge.items.IItemHandler handler = sl
+                    .getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+
             if (handler != null) {
                 CompoundTag data = be != null ? be.saveWithoutMetadata(sl.registryAccess()) : new CompoundTag();
                 ItemStack savedItem = new ItemStack(state.getBlock());
-                
-                // Only attach data if it's a logistical chest or container that we want to preserve
+
+                // Only attach data if it's a logistical chest or container that we want to
+                // preserve
                 boolean isLogistics = state.getBlock() instanceof com.example.ghostlib.block.LogisticalChestBlock;
                 if (isLogistics) {
                     savedItem.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(data));
-                    
+
                     // CRITICAL: Empty the handler before the block is removed.
                     // DO NOT VOID: Add extracted items to drone or world.
                     for (int i = 0; i < handler.getSlots(); i++) {
                         ItemStack extracted = handler.extractItem(i, 64, false);
                         if (!extracted.isEmpty()) {
                             ItemStack remainder = this.inventory.addItem(extracted);
-                            if (!remainder.isEmpty()) Block.popResource(level(), pos, remainder);
+                            if (!remainder.isEmpty())
+                                Block.popResource(level(), pos, remainder);
                         }
                     }
                 }
-                
+
                 ItemStack remainder = this.inventory.addItem(savedItem);
                 if (!remainder.isEmpty()) {
                     Block.popResource(level(), pos, remainder);
@@ -1007,20 +1080,24 @@ public class DroneEntity extends PathfinderMob {
             ItemStack tool = new ItemStack(net.minecraft.world.item.Items.DIAMOND_PICKAXE);
             boolean silk = this.getAttributeValue(ModAttributes.SILK_TOUCH) >= 1.0;
             if (silk) {
-                 tool.enchant(sl.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
-                    .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
+                tool.enchant(sl.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                        .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
             }
 
-            net.minecraft.world.level.storage.loot.LootParams.Builder builder = new net.minecraft.world.level.storage.loot.LootParams.Builder(sl)
-                    .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+            net.minecraft.world.level.storage.loot.LootParams.Builder builder = new net.minecraft.world.level.storage.loot.LootParams.Builder(
+                    sl)
+                    .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN,
+                            Vec3.atCenterOf(pos))
                     .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.TOOL, tool)
-                    .withOptionalParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.BLOCK_ENTITY, be);
+                    .withOptionalParameter(
+                            net.minecraft.world.level.storage.loot.parameters.LootContextParams.BLOCK_ENTITY, be);
 
             List<ItemStack> drops = state.getDrops(builder);
-            
+
             if (drops.isEmpty() && silk && !state.isAir()) {
-                 ItemStack fallback = new ItemStack(state.getBlock());
-                 if (!fallback.isEmpty()) drops.add(fallback);
+                ItemStack fallback = new ItemStack(state.getBlock());
+                if (!fallback.isEmpty())
+                    drops.add(fallback);
             }
 
             for (ItemStack drop : drops) {
@@ -1033,7 +1110,7 @@ public class DroneEntity extends PathfinderMob {
 
     private int findBestSlot(net.minecraft.world.item.Item item) {
         int bestSlot = -1;
-        
+
         // Check Ghost NBT if available (Context: Current Job)
         CompoundTag requiredNbt = null;
         if (currentJob != null && level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
@@ -1046,10 +1123,11 @@ public class DroneEntity extends PathfinderMob {
                 // Priority 1: Exact NBT Match (Restoring a specific chest)
                 if (requiredNbt != null && stack.has(DataComponents.BLOCK_ENTITY_DATA)) {
                     // Simple check: Does it have data? (Deep comparison is expensive/hard)
-                    // We assume if the drone has a "Data" stack, it's the right one for the job if we are in "Restoration" mode.
+                    // We assume if the drone has a "Data" stack, it's the right one for the job if
+                    // we are in "Restoration" mode.
                     return i;
                 }
-                
+
                 // Priority 2: Empty/Standard Stack (Fresh build)
                 if (bestSlot == -1)
                     bestSlot = i;
@@ -1063,20 +1141,20 @@ public class DroneEntity extends PathfinderMob {
             Optional<BlockPos> p = getPortPos();
             if (p.isPresent()) {
                 BlockPos targetPort = p.get();
-                
+
                 // 1. Dump NON-Egg items to Storage
                 if (!isInventoryEmpty()) {
                     dumpToNetworkStorage();
                 }
 
-                // 2. If still has items (that aren't eggs), we are stuck. 
+                // 2. If still has items (that aren't eggs), we are stuck.
                 // But if only eggs remain, we can go home.
                 boolean hasNonEggs = false;
-                for(int i=0; i<inventory.getContainerSize(); i++) {
+                for (int i = 0; i < inventory.getContainerSize(); i++) {
                     ItemStack s = inventory.getItem(i);
                     if (!s.isEmpty() && !s.is(ModItems.DRONE_SPAWN_EGG.get())) {
-                        hasNonEggs = true; 
-                        break; 
+                        hasNonEggs = true;
+                        break;
                     }
                 }
 
@@ -1091,7 +1169,7 @@ public class DroneEntity extends PathfinderMob {
                     this.droneState = DroneState.CHARGING;
                     return;
                 }
-                
+
                 // 4. Search for nearest available port in network
                 if (networkId != null) {
                     Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
@@ -1105,7 +1183,7 @@ public class DroneEntity extends PathfinderMob {
                         }
                     }
                 }
-                
+
                 // 5. Fallback: Idle on top of home port and charge
                 moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0), 0.8); // Increased speed
                 if (this.position().distanceTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0)) < 1.0) {
@@ -1160,8 +1238,9 @@ public class DroneEntity extends PathfinderMob {
     }
 
     private void dumpToNetworkStorage() {
-        if (networkId == null) return;
-        
+        if (networkId == null)
+            return;
+
         Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
         List<BlockPos> storageTargets = new ArrayList<>();
         List<BlockPos> lowPriorityTargets = new ArrayList<>();
@@ -1169,8 +1248,8 @@ public class DroneEntity extends PathfinderMob {
         for (BlockPos p : members) {
             if (level().getBlockEntity(p) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
                 var type = lc.getChestType();
-                if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.STORAGE || 
-                    type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
+                if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.STORAGE ||
+                        type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
                     storageTargets.add(p.immutable());
                 }
             } else {
@@ -1180,24 +1259,27 @@ public class DroneEntity extends PathfinderMob {
 
         // Try high priority first
         for (BlockPos p : storageTargets) {
-            if (isInventoryEmptyOfNonEggs()) return;
+            if (isInventoryEmptyOfNonEggs())
+                return;
             insertInto(p);
         }
         // Try low priority
         for (BlockPos p : lowPriorityTargets) {
-            if (isInventoryEmptyOfNonEggs()) return;
+            if (isInventoryEmptyOfNonEggs())
+                return;
             insertInto(p);
         }
     }
 
     private void insertInto(BlockPos p) {
         net.neoforged.neoforge.items.IItemHandler handler = level()
-            .getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, p, null);
+                .getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, p, null);
         if (handler != null) {
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);
                 if (!stack.isEmpty() && !stack.is(ModItems.DRONE_SPAWN_EGG.get())) {
-                    ItemStack remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, stack, false);
+                    ItemStack remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler,
+                            stack, false);
                     inventory.setItem(i, remainder);
                 }
             }
@@ -1207,7 +1289,8 @@ public class DroneEntity extends PathfinderMob {
     private boolean isInventoryEmptyOfNonEggs() {
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack s = inventory.getItem(i);
-            if (!s.isEmpty() && !s.is(ModItems.DRONE_SPAWN_EGG.get())) return false;
+            if (!s.isEmpty() && !s.is(ModItems.DRONE_SPAWN_EGG.get()))
+                return false;
         }
         return true;
     }
@@ -1225,7 +1308,8 @@ public class DroneEntity extends PathfinderMob {
             // However, this method is used to see if we can "Clear" ourselves.
             // If we have non-eggs left, we failed.
             for (int i = 0; i < inventory.getContainerSize(); i++) {
-                if (!inventory.getItem(i).isEmpty()) return false;
+                if (!inventory.getItem(i).isEmpty())
+                    return false;
             }
             return true;
         }
@@ -1311,7 +1395,7 @@ public class DroneEntity extends PathfinderMob {
         return false;
     }
 
-    private boolean hasItemInInventory(ItemStack stack) {
+    public boolean hasItemInInventory(ItemStack stack) {
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack s = inventory.getItem(i);
             if (!s.isEmpty() && s.is(stack.getItem()))

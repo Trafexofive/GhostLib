@@ -184,8 +184,11 @@ public class GhostHistoryManager {
                         // Real block in way: Mark for deconstruction
                         jobManager.registerDirectDeconstruct(pos, Blocks.AIR.defaultBlockState(), level);
                     } else if (currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock) {
-                        // If it's already a ghost, we can just delete it immediately.
-                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                        // NO MAGIC: Even for ghosts, mark them for removal so a drone can physically clear them.
+                        // This maintains the 'physical presence' requirement.
+                        if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
+                            gbe.setState(GhostBlockEntity.GhostState.TO_REMOVE);
+                        }
                     }
                 } else {
                     // We want to revert to a BLOCK (Placement).

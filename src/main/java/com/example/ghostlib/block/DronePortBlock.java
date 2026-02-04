@@ -49,7 +49,7 @@ public class DronePortBlock extends BaseEntityBlock {
         if (!level.isClientSide) {
             net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof DronePortBlockEntity port) {
-                player.openMenu(port, pos);
+                player.openMenu(port, buffer -> buffer.writeBlockPos(pos));
             }
         }
         return net.minecraft.world.InteractionResult.SUCCESS;

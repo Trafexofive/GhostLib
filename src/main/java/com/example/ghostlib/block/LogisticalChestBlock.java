@@ -59,7 +59,7 @@ public class LogisticalChestBlock extends BaseEntityBlock {
         if (!level.isClientSide) {
             net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof LogisticalChestBlockEntity chest) {
-                player.openMenu(chest, pos);
+                player.openMenu(chest, buffer -> buffer.writeBlockPos(pos));
             }
         }
         return net.minecraft.world.InteractionResult.sidedSuccess(level.isClientSide);

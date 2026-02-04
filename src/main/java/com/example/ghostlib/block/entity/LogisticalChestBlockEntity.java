@@ -16,7 +16,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
-public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvider {
+public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
     private final ItemStackHandler inventory = new ItemStackHandler(27) {
         @Override
         protected void onContentsChanged(int slot) { setChanged(); }
@@ -24,6 +24,16 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
 
     public LogisticalChestBlockEntity(BlockPos pos, BlockState state) {
         super(com.example.ghostlib.registry.ModBlockEntities.LOGISTICAL_CHEST.get(), pos, state);
+    }
+
+    @Override
+    public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(Player player) {
+        return com.lowdragmc.lowdraglib2.gui.ui.ModularUI.of(com.lowdragmc.lowdraglib2.gui.ui.UI.empty(), player);
+    }
+
+    @Override
+    public boolean isStillValid(Player player) {
+        return !isRemoved();
     }
 
     @Override
@@ -49,7 +59,7 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
 
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        return new com.example.ghostlib.menu.LogisticalChestMenu(containerId, inventory, this);
+        return new com.example.ghostlib.menu.LogisticalChestMenu(com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), containerId, inventory, this);
     }
 
     public LogisticalChestBlock.ChestType getChestType() {

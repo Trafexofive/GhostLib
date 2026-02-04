@@ -9,7 +9,6 @@ import com.example.ghostlib.registry.ModBlockEntities;
 import com.example.ghostlib.registry.ModEntities;
 import com.example.ghostlib.util.GhostJobManager;
 import com.example.ghostlib.block.GhostBlock;
-import com.example.ghostlib.client.screen.DronePortScreen;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -57,10 +56,7 @@ public class ClientModEventSubscriber {
 
     @SubscribeEvent
     public static void registerScreens(RegisterMenuScreensEvent event) {
-        event.register(com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(),
-                com.example.ghostlib.client.screen.LogisticalChestScreen::new);
-        event.register(com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(),
-                DronePortScreen::new);
+        // BlockUI menus are handled automatically by LDLib2
     }
 
     @SubscribeEvent
@@ -117,34 +113,29 @@ public class ClientModEventSubscriber {
             if (mc.player == null)
                 return;
 
-            if (ClientGlobalSelection.isLocked) {
-                // If locked but pos is null/invalid, init it
-                if (ClientGlobalSelection.lockedPos == null) {
-                    HitResult h = pickBlock(mc.player, 64.0D);
-                    if (h.getType() == HitResult.Type.BLOCK) {
-                        BlockPos t = ((BlockHitResult) h).getBlockPos();
-                        if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.PASTE) {
-                            // For paste mode, always place above the ground block
-                            t = t.above();
-                        }
-                        ClientGlobalSelection.lockedPos = t;
+            HitResult hit = pickBlock(mc.player, 64.0D);
+            BlockPos mousePos = null;
+            if (hit.getType() == HitResult.Type.BLOCK) {
+                mousePos = ((BlockHitResult) hit).getBlockPos();
+                if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.PASTE) {
+                    if (ClientGlobalSelection.anchorPos == null) {
+                        mousePos = mousePos.above();
                     }
                 }
-                // Don't update selection from mouse if locked
-            } else {
-                HitResult hit = pickBlock(mc.player, 64.0D);
-                BlockPos target = null;
-                if (hit.getType() == HitResult.Type.BLOCK) {
-                    target = ((BlockHitResult) hit).getBlockPos();
+            }
 
-                    // For Paste mode, place above the target block
-                    if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.PASTE) {
-                        if (ClientGlobalSelection.anchorPos == null) {
-                            target = target.above();
-                        }
+            if (ClientGlobalSelection.isLocked) {
+                // If locked, we don't update currentEndPos from mouse UNLESS we are dragging
+                if (ClientGlobalSelection.isSelecting) {
+                    ClientGlobalSelection.updateSelection(mousePos);
+                } else {
+                    if (ClientGlobalSelection.lockedPos == null && mousePos != null) {
+                        ClientGlobalSelection.lockedPos = mousePos;
                     }
-                    ClientGlobalSelection.updateSelection(target);
+                    ClientGlobalSelection.currentEndPos = ClientGlobalSelection.lockedPos;
                 }
+            } else {
+                ClientGlobalSelection.updateSelection(mousePos);
             }
 
             // Handle Drag Release -> Confirm
@@ -202,7 +193,7 @@ public class ClientModEventSubscriber {
 
             BlockPos hitPos;
 
-            // If locked, use locked position instead of raycast
+            // FIX: If locked, the START of the drag is the locked position.
             if (ClientGlobalSelection.isLocked && ClientGlobalSelection.lockedPos != null) {
                 hitPos = ClientGlobalSelection.lockedPos;
             } else {
@@ -211,7 +202,6 @@ public class ClientModEventSubscriber {
                     return;
                 hitPos = ((BlockHitResult) hit).getBlockPos();
 
-                // For paste mode, always place above the target
                 if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.PASTE) {
                     hitPos = hitPos.above();
                 }
@@ -555,54 +545,18 @@ public class ClientModEventSubscriber {
             MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
 
             VertexConsumer lineConsumer = bufferSource.getBuffer(RenderType.lines());
-            VertexConsumer tintConsumer = bufferSource.getBuffer(RenderType.translucent());
-            BlockRenderDispatcher blockRenderer = mc.getBlockRenderer();
 
             poseStack.pushPose();
             poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
 
             for (Map<BlockPos, BlockState> map : jobs.values()) {
-                for (Map.Entry<BlockPos, BlockState> entry : map.entrySet()) {
-                    BlockPos pos = entry.getKey();
-                    BlockState targetState = entry.getValue();
-
-                    // 1. Draw Red Box (Deconstruction Indicator)
-                    drawBox(poseStack, lineConsumer, tintConsumer, pos, pos, 1.0f, 0.0f, 0.0f, 0.25f);
-
-                    // 2. Draw Ghost Model (Future Build Indicator)
-                    if (targetState != null && !targetState.isAir()) {
-                        poseStack.pushPose();
-                        poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
-                        
-                        // Render translucent ghost (Greenish tint to distinguish from red deconstruct)
-                        // Or just standard ghost blue? Let's go with Blue/White to contrast Red.
-                        blockRenderer.getModelRenderer().renderModel(poseStack.last(),
-                                bufferSource.getBuffer(RenderType.translucent()),
-                                targetState, blockRenderer.getBlockModel(targetState), 
-                                0.6f, 0.8f, 1.0f, // Light Blue/Cyan tint
-                                15728880,
-                                net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, ModelData.EMPTY,
-                                RenderType.translucent());
-                        
-                        poseStack.popPose();
-                    }
-                }
-            }
-
-            // Render TO_REMOVE state blocks too
-            int cx = net.minecraft.core.SectionPos.blockToSectionCoord(cameraPos.x);
-            int cz = net.minecraft.core.SectionPos.blockToSectionCoord(cameraPos.z);
-            for (int x = cx - 2; x <= cx + 2; x++) {
-                for (int z = cz - 2; z <= cz + 2; z++) {
-                    net.minecraft.world.level.chunk.LevelChunk chunk = mc.level.getChunk(x, z);
-                    for (net.minecraft.world.level.block.entity.BlockEntity be : chunk.getBlockEntities().values()) {
-                        if (be instanceof com.example.ghostlib.block.entity.GhostBlockEntity gbe) {
-                            if (gbe.getCurrentState() == com.example.ghostlib.block.entity.GhostBlockEntity.GhostState.TO_REMOVE) {
-                                drawBox(poseStack, lineConsumer, tintConsumer, be.getBlockPos(), be.getBlockPos(), 1.0f,
-                                        0.0f, 0.0f, 0.25f);
-                            }
-                        }
-                    }
+                for (BlockPos pos : map.keySet()) {
+                    // Draw Red wireframe for real blocks marked for deconstruction
+                    float s = 0.005f;
+                    net.minecraft.client.renderer.LevelRenderer.renderLineBox(poseStack, lineConsumer,
+                            pos.getX() - s, pos.getY() - s, pos.getZ() - s,
+                            pos.getX() + 1 + s, pos.getY() + 1 + s, pos.getZ() + 1 + s,
+                            1.0f, 0.0f, 0.0f, 1.0f);
                 }
             }
 
