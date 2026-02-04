@@ -207,51 +207,64 @@ public class GhostJobManager {
 
     private Job findInMap(Map<BlockPos, BlockState> map, BlockPos dronePos, UUID droneId, JobType type) {
         if (map == null || map.isEmpty()) return null;
-        return map.keySet().stream()
-            .filter(p -> !assignedPositions.containsKey(p))
-            .sorted(Comparator.comparingDouble(p -> p.distSqr(dronePos)))
-            .filter(p -> {
-                // Use atomic operation for thread safety
-                UUID previous = assignedPositions.putIfAbsent(p, droneId);
-                if (previous == null) {
-                    // Successfully assigned, also track in chunk
-                    long chunkKey = ChunkPos.asLong(p);
-                    assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(p);
-                    // Add to lock-free assignment queue for performance tracking
-                    addToAssignmentQueue(p, droneId);
-                    return true;
-                }
-                return false; // Already assigned to another drone
-            })
-            .findFirst()
-            .map(p -> new Job(p, type, map.get(p), jobFinalStates.get(p)))
-            .orElse(null);
+
+        // Convert to list once to avoid repeated stream creation
+        List<Map.Entry<BlockPos, BlockState>> candidates = new ArrayList<>();
+        for (Map.Entry<BlockPos, BlockState> entry : map.entrySet()) {
+            if (!assignedPositions.containsKey(entry.getKey())) {
+                candidates.add(entry);
+            }
+        }
+
+        // Sort by distance to drone
+        candidates.sort(Comparator.comparingDouble(entry -> entry.getKey().distSqr(dronePos)));
+
+        // Find first available job and assign it atomically
+        for (Map.Entry<BlockPos, BlockState> entry : candidates) {
+            BlockPos pos = entry.getKey();
+            UUID previous = assignedPositions.putIfAbsent(pos, droneId);
+            if (previous == null) {
+                // Successfully assigned, also track in chunk
+                long chunkKey = ChunkPos.asLong(pos);
+                assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(pos);
+                // Add to assignment queue for performance tracking
+                addToAssignmentQueue(pos, droneId);
+                return new Job(pos, type, entry.getValue(), jobFinalStates.get(pos));
+            }
+        }
+        return null;
     }
 
     private Job findInSet(Set<BlockPos> set, BlockPos dronePos, UUID droneId, JobType type) {
         if (set == null || set.isEmpty()) return null;
+
         List<BlockPos> candidates;
         synchronized (set) {
-            candidates = set.stream().filter(p -> !assignedPositions.containsKey(p))
-                .sorted(Comparator.comparingDouble(p -> p.distSqr(dronePos))).toList();
-        }
-        return candidates.stream()
-            .filter(p -> {
-                // Use atomic operation for thread safety
-                UUID previous = assignedPositions.putIfAbsent(p, droneId);
-                if (previous == null) {
-                    // Successfully assigned, also track in chunk
-                    long chunkKey = ChunkPos.asLong(p);
-                    assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(p);
-                    // Add to lock-free assignment queue for performance tracking
-                    addToAssignmentQueue(p, droneId);
-                    return true;
+            // Create list of unassigned positions
+            candidates = new ArrayList<>();
+            for (BlockPos pos : set) {
+                if (!assignedPositions.containsKey(pos)) {
+                    candidates.add(pos);
                 }
-                return false; // Already assigned to another drone
-            })
-            .findFirst()
-            .map(p -> new Job(p, type, Blocks.AIR.defaultBlockState(), null))
-            .orElse(null);
+            }
+        }
+
+        // Sort by distance to drone
+        candidates.sort(Comparator.comparingDouble(p -> p.distSqr(dronePos)));
+
+        // Find first available job and assign it atomically
+        for (BlockPos pos : candidates) {
+            UUID previous = assignedPositions.putIfAbsent(pos, droneId);
+            if (previous == null) {
+                // Successfully assigned, also track in chunk
+                long chunkKey = ChunkPos.asLong(pos);
+                assignedInChunk.computeIfAbsent(chunkKey, k -> ConcurrentHashMap.newKeySet()).add(pos);
+                // Add to assignment queue for performance tracking
+                addToAssignmentQueue(pos, droneId);
+                return new Job(pos, type, Blocks.AIR.defaultBlockState(), null);
+            }
+        }
+        return null;
     }
 
     /**
