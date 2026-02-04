@@ -25,6 +25,7 @@ public class LogisticsNetworkManager extends SavedData {
 
     private final Map<Integer, Set<BlockPos>> networkMembers = new HashMap<>();
     private final Map<BlockPos, Integer> posToNetworkId = new HashMap<>();
+    private final Map<Integer, com.example.ghostlib.logistics.LogisticsCoordinator> coordinators = new HashMap<>();
     private int nextId = 1;
     public LogisticsNetworkManager() {}
 
@@ -158,5 +159,20 @@ public class LogisticsNetworkManager extends SavedData {
 
     public Set<BlockPos> getNetworkMembers(int id) {
         return networkMembers.getOrDefault(id, new HashSet<>());
+    }
+
+    /**
+     * Get or create a logistics coordinator for a network
+     */
+    public com.example.ghostlib.logistics.LogisticsCoordinator getCoordinator(int networkId, Level level) {
+        return coordinators.computeIfAbsent(networkId, id -> new com.example.ghostlib.logistics.LogisticsCoordinator(networkId, level));
+    }
+
+    /**
+     * Get network statistics for performance monitoring
+     */
+    public com.example.ghostlib.logistics.LogisticsCoordinator.NetworkStats getNetworkStats(int networkId, Level level) {
+        com.example.ghostlib.logistics.LogisticsCoordinator coordinator = getCoordinator(networkId, level);
+        return coordinator != null ? coordinator.getNetworkStats() : null;
     }
 }
