@@ -212,8 +212,13 @@ public class Keybinds {
                     return true;
                 }
                 if (key == GLFW.GLFW_KEY_F) {
-                    ClientClipboard.flip();
-                    mc.player.displayClientMessage(Component.literal("Flipped Clipboard").withStyle(ChatFormatting.AQUA), true);
+                    if (isCtrlDown) {
+                        ClientGlobalSelection.forceModeToggle = !ClientGlobalSelection.forceModeToggle;
+                        mc.player.displayClientMessage(Component.literal("Force Mode: " + (ClientGlobalSelection.forceModeToggle ? "ON" : "OFF")).withStyle(ChatFormatting.GOLD), true);
+                    } else {
+                        ClientClipboard.flip();
+                        mc.player.displayClientMessage(Component.literal("Flipped Clipboard").withStyle(ChatFormatting.AQUA), true);
+                    }
                     return true;
                 }
             }

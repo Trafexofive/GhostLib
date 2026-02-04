@@ -25,57 +25,83 @@ public class SwarmHandler {
         if (player.tickCount % 20 != 0)
             return;
 
-        GhostJobManager manager = GhostJobManager.get(serverLevel);
+                GhostJobManager manager = GhostJobManager.get(serverLevel);
 
-        // Cap spawn rate at 5 per second
-        for (int i = 0; i < 5; i++) {
-            // Find a job for a potential drone at the player's location
-            GhostJobManager.Job job = manager.requestJob(player.blockPosition(), player.getUUID(), true);
-            if (job == null) break;
+        
 
-            // CRITICAL: Drones must NEVER deploy for halted jobs.
-            // requestJob only looks in constructionJobs, but let's double check the BE state.
-            if (player.level().getBlockEntity(job.pos()) instanceof com.example.ghostlib.block.entity.GhostBlockEntity gbe) {
-                if (gbe.getCurrentState() == com.example.ghostlib.block.entity.GhostBlockEntity.GhostState.MISSING_ITEMS) {
-                    manager.releaseJob(job.pos(), player.getUUID());
-                    continue; 
-                }
-            }
+                // Cap spawn rate at 5 per second
 
-            // Check capability BEFORE spawning
-            boolean canFulfill = false;
-            if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
-                ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
-                // Player drones fetch from player inventory
-                if (hasItemInInventory(player, required)) {
-                    canFulfill = true;
-                }
-            } else {
-                canFulfill = true; // Deconstruction always fulfillable by fresh drone
-            }
+                        for (int i = 0; i < 5; i++) {
 
-            if (canFulfill) {
-                int droneSlot = findDroneInInventory(player);
-                if (droneSlot != -1) {
-                    spawnDroneFromSlot(player, droneSlot, job);
-                } else {
-                    manager.releaseJob(job.pos(), player.getUUID());
-                    break;
-                }
-            } else {
-                // If we can't fulfill, the job remains unassigned or moves to Halted
-                // Drones should stay home.
-                manager.releaseJob(job.pos(), player.getUUID());
+                            // 1. Check if player even has a drone item before looking for jobs
+
+                            int droneSlot = findDroneInInventory(player);
+
+                            if (droneSlot == -1) break;
+
                 
-                // OPTIMIZATION: If this job is unfulfillable, tell the ghost to halt 
-                // so we don't keep picking it up every second.
-                if (player.level().getBlockEntity(job.pos()) instanceof com.example.ghostlib.block.entity.GhostBlockEntity gbe) {
-                    gbe.setState(com.example.ghostlib.block.entity.GhostBlockEntity.GhostState.MISSING_ITEMS);
-                }
-                continue;
+
+                            // 2. Scan for a job
+
+                            GhostJobManager.Job job = manager.requestJob(player.blockPosition(), player.getUUID(), true);
+
+                            if (job == null) break;
+
+                
+
+                            // 3. Capability Check: Construction jobs MUST have the item in inventory
+
+                            boolean canFulfill = false;
+
+                            if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
+
+                                ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
+
+                                if (hasItemInInventory(player, required)) {
+
+                                    canFulfill = true;
+
+                                }
+
+                            } else {
+
+                                canFulfill = true; // Deconstruction always fulfillable
+
+                            }
+
+                
+
+                            if (canFulfill) {
+
+                                // 4. Deployment: Reassign job from player temporary ID to new drone ID
+
+                                spawnDroneFromSlot(player, droneSlot, job);
+
+                            } else {
+
+                                // 5. Cleanup: Material missing, release the job back to the manager
+
+                                manager.releaseJob(job.pos(), player.getUUID());
+
+                                
+
+                                // Set ghost state to Halted (Purple) so we don't spam deployment checks for it
+
+                                if (player.level().getBlockEntity(job.pos()) instanceof com.example.ghostlib.block.entity.GhostBlockEntity gbe) {
+
+                                    gbe.setState(com.example.ghostlib.block.entity.GhostBlockEntity.GhostState.MISSING_ITEMS);
+
+                                }
+
+                                continue;
+
+                            }
+
+                        }
+
+                
+
             }
-        }
-    }
 
     private static int findDroneInInventory(Player player) {
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {

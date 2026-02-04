@@ -1,8 +1,12 @@
 package com.example.ghostlib.block.entity;
 
 import com.example.ghostlib.block.LogisticalChestBlock;
-import com.example.ghostlib.registry.ModBlockEntities;
 import com.example.ghostlib.util.LogisticsNetworkManager;
+import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
+import com.lowdragmc.lowdraglib2.gui.ui.UI;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.ItemSlot;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
+import com.lowdragmc.lowdraglib2.gui.ui.elements.inventory.InventorySlots;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -15,8 +19,9 @@ import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
 
-public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
+public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUI, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
     private final ItemStackHandler inventory = new ItemStackHandler(27) {
         @Override
         protected void onContentsChanged(int slot) { setChanged(); }
@@ -27,8 +32,27 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
     }
 
     @Override
-    public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(Player player) {
-        return com.lowdragmc.lowdraglib2.gui.ui.ModularUI.of(com.lowdragmc.lowdraglib2.gui.ui.UI.empty(), player);
+    public ModularUI createUI(Player player) {
+        UI ui = UI.empty();
+        ui.getRootElement().addChild(new Label().setValue(getDisplayName()).layout(l -> l.marginTop(5).marginLeft(5)));
+        
+        // 3x9 Inventory
+        for (int i = 0; i < 3; i++) {
+            final int row = i;
+            for (int j = 0; j < 9; j++) {
+                final int col = j;
+                int index = i * 9 + j;
+                ui.getRootElement().addChild(new ItemSlot().bind(inventory, index).layout(l -> l.left(8f + col * 18f).top(17f + row * 18f)));
+            }
+        }
+        
+        ui.getRootElement().addChild(new InventorySlots().layout(l -> l.bottom(5).left(8)));
+        return ModularUI.of(ui, player);
+    }
+
+    @Override
+    public ModularUI createUI(com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUIHolder holder) {
+        return createUI(holder.player);
     }
 
     @Override
@@ -59,7 +83,7 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
 
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        return new com.example.ghostlib.menu.LogisticalChestMenu(com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), containerId, inventory, this);
+        return new com.example.ghostlib.menu.LogisticalChestMenu((MenuType<com.lowdragmc.lowdraglib2.gui.holder.ModularUIContainerMenu>)com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), containerId, inventory, this);
     }
 
     public LogisticalChestBlock.ChestType getChestType() {

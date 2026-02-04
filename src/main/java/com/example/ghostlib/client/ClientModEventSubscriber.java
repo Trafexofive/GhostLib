@@ -125,9 +125,13 @@ public class ClientModEventSubscriber {
             }
 
             if (ClientGlobalSelection.isLocked) {
-                // If locked, we don't update currentEndPos from mouse UNLESS we are dragging
+                // LOCK DRAG LOGIC:
+                // 1. If NOT selecting, endPos stays at lockedPos (renders single ghost)
+                // 2. If SELECTING (dragging), endPos follows mouse (renders tiled ghosts from locked anchor)
                 if (ClientGlobalSelection.isSelecting) {
-                    ClientGlobalSelection.updateSelection(mousePos);
+                    if (mousePos != null) {
+                        ClientGlobalSelection.currentEndPos = mousePos;
+                    }
                 } else {
                     if (ClientGlobalSelection.lockedPos == null && mousePos != null) {
                         ClientGlobalSelection.lockedPos = mousePos;
@@ -323,15 +327,15 @@ public class ClientModEventSubscriber {
                 case PASTE:
                     if (ClientClipboard.hasClipboard()) {
                         // Send packet with clipboard data
-                        // Bit 0: Grid (Ctrl), Bit 2: Force (Shift/Crouch)
+                        // Bit 0: Grid (Ctrl), Bit 2: Force (Shift/Crouch OR Toggle)
                         boolean isCtrlDown = com.mojang.blaze3d.platform.InputConstants
                                 .isKeyDown(mc.getWindow().getWindow(), org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_CONTROL);
-                        boolean isShiftDown = mc.player.isCrouching();
+                        boolean isForceActive = mc.player.isCrouching() || ClientGlobalSelection.forceModeToggle;
 
                         int mode = 0;
                         if (isCtrlDown)
                             mode |= 1;
-                        if (isShiftDown)
+                        if (isForceActive)
                             mode |= 4;
 
                         BlockPos finalStart = start.offset(ClientGlobalSelection.patternOffset);
@@ -375,22 +379,30 @@ public class ClientModEventSubscriber {
             poseStack.pushPose();
             poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
 
+            // Calculate mousePos for rendering
+            HitResult hit = pickBlock(player, 64.0D);
+            BlockPos mousePos = null;
+            if (hit.getType() == HitResult.Type.BLOCK) {
+                mousePos = ((BlockHitResult) hit).getBlockPos();
+                if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.PASTE) {
+                    if (ClientGlobalSelection.anchorPos == null) {
+                        mousePos = mousePos.above();
+                    }
+                }
+            }
+
             // Recalculate lookPos for rendering to match interaction range
             BlockPos lookPos = ClientGlobalSelection.currentEndPos;
 
-            if (ClientGlobalSelection.isLocked && ClientGlobalSelection.lockedPos != null) {
-                lookPos = ClientGlobalSelection.lockedPos;
-            } else if (!ClientGlobalSelection.isSelecting) {
-                HitResult hit = pickBlock(player, 64.0D);
-                if (hit.getType() == HitResult.Type.BLOCK) {
-                    lookPos = ((BlockHitResult) hit).getBlockPos();
-                    if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.PASTE) {
-                        if (ClientGlobalSelection.anchorPos == null) {
-                            // Match onClientTick logic: Always place above the target block
-                            lookPos = lookPos.above();
-                        }
-                    }
+            if (ClientGlobalSelection.isLocked) {
+                if (ClientGlobalSelection.isSelecting) {
+                    // While dragging in lock mode, preview should follow mouse
+                    lookPos = mousePos != null ? mousePos : ClientGlobalSelection.lockedPos;
+                } else {
+                    lookPos = ClientGlobalSelection.lockedPos;
                 }
+            } else if (!ClientGlobalSelection.isSelecting) {
+                lookPos = mousePos;
             }
 
             if (lookPos == null) {

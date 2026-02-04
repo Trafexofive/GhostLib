@@ -46,11 +46,21 @@ public class DronePortBlock extends BaseEntityBlock {
 
     @Override
     protected net.minecraft.world.InteractionResult useWithoutItem(BlockState state, net.minecraft.world.level.Level level, BlockPos pos, net.minecraft.world.entity.player.Player player, net.minecraft.world.phys.BlockHitResult hitResult) {
-        if (!level.isClientSide) {
-            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
-            if (be instanceof DronePortBlockEntity port) {
-                player.openMenu(port, buffer -> buffer.writeBlockPos(pos));
+        if (!level.isClientSide && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            net.minecraft.world.item.ItemStack stack = player.getItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND);
+            
+            // 1. Handle Drone Insertion via Right-Click
+            if (stack.is(com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get())) {
+                net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+                if (be instanceof DronePortBlockEntity port) {
+                    net.minecraft.world.item.ItemStack remainder = port.insertItem(stack.copy(), false);
+                    player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, remainder);
+                    return net.minecraft.world.InteractionResult.SUCCESS;
+                }
             }
+
+            // 2. Otherwise open GUI
+            com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.openUI(serverPlayer, pos);
         }
         return net.minecraft.world.InteractionResult.SUCCESS;
     }

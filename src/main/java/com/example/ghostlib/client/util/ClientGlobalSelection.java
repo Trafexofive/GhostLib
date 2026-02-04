@@ -24,6 +24,8 @@ public class ClientGlobalSelection {
     public static int tilingSpacingX = 0;
     public static int tilingSpacingZ = 0;
 
+    public static boolean forceModeToggle = false;
+
     // Tracks if the user is currently holding the mouse button for a selection/drag
     public static boolean isSelecting = false;
     public static boolean startedSelectionThisClick = false;

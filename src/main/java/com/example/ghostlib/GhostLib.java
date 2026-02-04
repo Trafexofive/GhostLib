@@ -53,7 +53,7 @@ public class GhostLib {
         event.registerBlockEntity(
             net.neoforged.neoforge.capabilities.Capabilities.EnergyStorage.BLOCK,
             com.example.ghostlib.registry.ModBlockEntities.DRONE_PORT.get(),
-            (be, side) -> null // Energy not yet implemented
+            (be, side) -> be.getEnergyStorage()
         );
     }
 }

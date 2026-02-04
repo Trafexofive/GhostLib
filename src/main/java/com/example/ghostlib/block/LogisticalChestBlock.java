@@ -56,11 +56,8 @@ public class LogisticalChestBlock extends BaseEntityBlock {
 
     @Override
     protected net.minecraft.world.InteractionResult useWithoutItem(BlockState state, net.minecraft.world.level.Level level, BlockPos pos, net.minecraft.world.entity.player.Player player, net.minecraft.world.phys.BlockHitResult hitResult) {
-        if (!level.isClientSide) {
-            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
-            if (be instanceof LogisticalChestBlockEntity chest) {
-                player.openMenu(chest, buffer -> buffer.writeBlockPos(pos));
-            }
+        if (!level.isClientSide && player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.openUI(serverPlayer, pos);
         }
         return net.minecraft.world.InteractionResult.sidedSuccess(level.isClientSide);
     }
