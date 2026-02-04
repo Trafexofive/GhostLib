@@ -23,7 +23,7 @@ dependencies {
 
     implementation 'com.example:factorycore:1.0.0'
     implementation files('../mods/ldlib2-neoforge-1.21.1-2.1.9-all.jar')
-    implementation files('../mods/yoga-1.0.0.jar')
+    implementation files('../libraries/yoga-1.0.0.jar')
 
 }
 
