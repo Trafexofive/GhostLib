@@ -797,7 +797,7 @@ public class DroneEntity extends PathfinderMob {
 
             this.playSound(com.example.ghostlib.registry.ModSounds.DRONE_WORK.get(), 1.0f, 1.0f);
 
-            // Complete the job properly
+            // Complete the construction job properly
             GhostJobManager.get(level()).completeJob(pos, level());
             double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
             this.energy -= (int)(WORK_COST / efficiency);
