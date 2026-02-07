@@ -1,6 +1,7 @@
 package com.example.ghostlib.client;
 
 import com.example.ghostlib.GhostLib;
+import com.example.factorycore.client.ModularUIScreenProxy;
 import com.example.ghostlib.client.model.DroneModel;
 import com.example.ghostlib.client.renderer.entity.DroneRenderer;
 import com.example.ghostlib.client.util.ClientClipboard;

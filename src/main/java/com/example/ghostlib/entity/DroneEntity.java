@@ -896,6 +896,9 @@ public class DroneEntity extends PathfinderMob {
                 return;
             }
 
+            // Trigger multi-block logic or other setPlacedBy effects
+            currentJob.targetAfter().getBlock().setPlacedBy(this.level(), pos, currentJob.targetAfter(), this, usedStack);
+
             com.example.ghostlib.util.GhostLogger
                     .drone("Drone " + this.getId() + " setBlock SUCCESS at " + pos + ", verifying...");
 
