@@ -319,44 +319,74 @@ public class DroneEntity extends PathfinderMob {
     }
 
     private void handleCharging() {
-        if (getMode() == DroneMode.PORT && getPortPos().isPresent()) {
-            BlockPos port = getPortPos().get();
-            // Dock at the TOP of the controller
-            Vec3 dockPos = Vec3.atCenterOf(port).add(0, 0.5, 0);
-            // Move faster when charging to return to port quickly
-            moveSmoothlyTo(dockPos, 1.0); // Increased speed from 0.8 to 1.0
+        if (getMode() == DroneMode.PORT) {
+            BlockPos targetPort = findNearestNetworkPort();
+            if (targetPort == null) {
+                targetPort = getPortPos().orElse(null);
+            }
 
-            if (this.position().distanceTo(dockPos) < 1.0) {
-                if (level().getBlockEntity(port) instanceof IDronePort dp) {
-                    // Charging
-                    int charged = dp.chargeDrone(2000, false);
-                    double maxEnergy = this.getAttributeValue(ModAttributes.MAX_ENERGY);
-                    this.energy = Math.min(this.energy + charged, (int) maxEnergy);
+            if (targetPort != null) {
+                // Update home port if we found a better one in network
+                if (!targetPort.equals(getPortPos().orElse(null))) {
+                    this.setPort(targetPort);
+                }
 
-                    // Item Swap while docked
-                    if (!isInventoryEmpty()) {
-                        tryDumpAtPort(port);
-                    }
+                // Dock at the TOP of the controller
+                Vec3 dockPos = Vec3.atCenterOf(targetPort).add(0, 0.5, 0);
+                // Move faster when charging to return to port quickly
+                moveSmoothlyTo(dockPos, 1.0); // Increased speed from 0.8 to 1.0
 
-                    if (this.energy >= (int) maxEnergy * 0.9) {
-                        // If fully charged AND idle, try to store self
-                        if (idleChecks > 100 && isInventoryEmpty()) {
-                            ItemStack self = new ItemStack(
-                                    com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get());
-                            if (dp.insertItem(self, true).isEmpty()) {
-                                dp.insertItem(self, false);
-                                this.discard();
-                                return;
-                            }
+                if (this.position().distanceTo(dockPos) < 1.0) {
+                    if (level().getBlockEntity(targetPort) instanceof IDronePort dp) {
+                        // Charging
+                        int charged = dp.chargeDrone(2000, false);
+                        double maxEnergy = this.getAttributeValue(ModAttributes.MAX_ENERGY);
+                        this.energy = Math.min(this.energy + charged, (int) maxEnergy);
+
+                        // Item Swap while docked
+                        if (!isInventoryEmpty()) {
+                            tryDumpAtPort(targetPort);
                         }
-                        this.droneState = DroneState.IDLE;
-                        this.setDeltaMovement(0, 0.5, 0);
+
+                        if (this.energy >= (int) maxEnergy * 0.9) {
+                            // If fully charged AND idle, try to store self
+                            if (idleTicks > 100 && isInventoryEmpty()) {
+                                ItemStack self = new ItemStack(
+                                        com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get());
+                                if (dp.insertItem(self, true).isEmpty()) {
+                                    dp.insertItem(self, false);
+                                    this.discard();
+                                    return;
+                                }
+                            }
+                            this.droneState = DroneState.IDLE;
+                            this.setDeltaMovement(0, 0.5, 0);
+                        }
                     }
                 }
+            } else {
+                this.droneState = DroneState.IDLE;
             }
         } else {
             this.droneState = DroneState.IDLE;
         }
+    }
+
+    private BlockPos findNearestNetworkPort() {
+        if (networkId == null) return null;
+        Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
+        BlockPos nearest = null;
+        double minDist = Double.MAX_VALUE;
+        for (BlockPos p : members) {
+            if (level().getBlockEntity(p) instanceof IDronePort) {
+                double d = p.distSqr(this.blockPosition());
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = p;
+                }
+            }
+        }
+        return nearest;
     }
 
     private void handleIdle() {
@@ -1142,52 +1172,25 @@ public class DroneEntity extends PathfinderMob {
             if (p.isPresent()) {
                 BlockPos targetPort = p.get();
 
-                // 1. Dump NON-Egg items to Storage
-                if (!isInventoryEmpty()) {
-                    dumpToNetworkStorage();
-                }
-
-                // 2. If still has items (that aren't eggs), we are stuck.
-                // But if only eggs remain, we can go home.
-                boolean hasNonEggs = false;
-                for (int i = 0; i < inventory.getContainerSize(); i++) {
-                    ItemStack s = inventory.getItem(i);
-                    if (!s.isEmpty() && !s.is(ModItems.DRONE_SPAWN_EGG.get())) {
-                        hasNonEggs = true;
-                        break;
-                    }
-                }
-
-                if (hasNonEggs) {
-                    // Retry or Idle-Hover near port to indicate "Full"
-                    moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 3.0, 0), 0.8); // Increased speed
-                    return;
-                }
-
-                // 3. Try home port (For Eggs/Self)
-                if (tryDumpAtPort(targetPort)) {
-                    this.droneState = DroneState.CHARGING;
-                    return;
-                }
-
-                // 4. Search for nearest available port in network
-                if (networkId != null) {
-                    Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
-                    for (BlockPos other : members) {
-                        if (level().getBlockEntity(other) instanceof IDronePort) {
-                            if (tryDumpAtPort(other)) {
-                                this.setPort(other); // Re-assign to new home
-                                this.droneState = DroneState.CHARGING;
-                                return;
-                            }
+                // Find a place to dump items
+                BlockPos dumpTarget = findDumpTarget();
+                if (dumpTarget != null) {
+                    moveSmoothlyTo(Vec3.atCenterOf(dumpTarget), 0.7);
+                    if (this.position().distanceTo(Vec3.atCenterOf(dumpTarget)) < 2.0) {
+                        insertInto(dumpTarget);
+                        if (isInventoryEmptyOfNonEggs()) {
+                            this.droneState = DroneState.IDLE;
                         }
                     }
+                    return;
                 }
 
-                // 5. Fallback: Idle on top of home port and charge
-                moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0), 0.8); // Increased speed
+                // If no other storage, try home port
+                moveSmoothlyTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0), 0.7);
                 if (this.position().distanceTo(Vec3.atCenterOf(targetPort).add(0, 1.0, 0)) < 1.0) {
-                    this.droneState = DroneState.CHARGING;
+                    if (tryDumpAtPort(targetPort)) {
+                        this.droneState = DroneState.CHARGING;
+                    }
                 }
             }
             return;
@@ -1237,38 +1240,78 @@ public class DroneEntity extends PathfinderMob {
         }
     }
 
-    private void dumpToNetworkStorage() {
-        if (networkId == null)
-            return;
+    private BlockPos findDumpTarget() {
+        // 1. Network Search
+        if (networkId != null) {
+            Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
+            BlockPos bestStorage = null;
+            BlockPos bestOther = null;
 
-        Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
-        List<BlockPos> storageTargets = new ArrayList<>();
-        List<BlockPos> lowPriorityTargets = new ArrayList<>();
+            for (BlockPos p : members) {
+                if (p.equals(getPortPos().orElse(null))) continue;
+                
+                net.neoforged.neoforge.items.IItemHandler handler = level().getCapability(
+                    net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, p, null);
+                
+                if (handler != null) {
+                    boolean isStorage = false;
+                    if (level().getBlockEntity(p) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
+                        var type = lc.getChestType();
+                        if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.STORAGE ||
+                            type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
+                            isStorage = true;
+                        }
+                    }
 
-        for (BlockPos p : members) {
-            if (level().getBlockEntity(p) instanceof com.example.ghostlib.block.entity.LogisticalChestBlockEntity lc) {
-                var type = lc.getChestType();
-                if (type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.STORAGE ||
-                        type == com.example.ghostlib.block.LogisticalChestBlock.ChestType.BUFFER) {
-                    storageTargets.add(p.immutable());
+                    // Check if has space
+                    boolean hasSpace = false;
+                    for (int i = 0; i < inventory.getContainerSize(); i++) {
+                        ItemStack s = inventory.getItem(i);
+                        if (!s.isEmpty() && !s.is(ModItems.DRONE_SPAWN_EGG.get())) {
+                            if (net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, s, true).getCount() < s.getCount()) {
+                                hasSpace = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (hasSpace) {
+                        if (isStorage) {
+                            if (bestStorage == null || p.distSqr(this.blockPosition()) < bestStorage.distSqr(this.blockPosition()))
+                                bestStorage = p.immutable();
+                        } else {
+                            if (bestOther == null || p.distSqr(this.blockPosition()) < bestOther.distSqr(this.blockPosition()))
+                                bestOther = p.immutable();
+                        }
+                    }
                 }
-            } else {
-                lowPriorityTargets.add(p.immutable());
+            }
+            if (bestStorage != null) return bestStorage;
+            if (bestOther != null) return bestOther;
+        }
+
+        // 2. Local Search
+        int radius = 16;
+        BlockPos center = this.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -4, -radius), center.offset(radius, 4, radius))) {
+            if (pos.equals(getPortPos().orElse(null))) continue;
+            
+            net.neoforged.neoforge.items.IItemHandler handler = level().getCapability(
+                net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+            
+            if (handler != null) {
+                // Check if has space
+                for (int i = 0; i < inventory.getContainerSize(); i++) {
+                    ItemStack s = inventory.getItem(i);
+                    if (!s.isEmpty() && !s.is(ModItems.DRONE_SPAWN_EGG.get())) {
+                        if (net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, s, true).getCount() < s.getCount()) {
+                            return pos.immutable();
+                        }
+                    }
+                }
             }
         }
-
-        // Try high priority first
-        for (BlockPos p : storageTargets) {
-            if (isInventoryEmptyOfNonEggs())
-                return;
-            insertInto(p);
-        }
-        // Try low priority
-        for (BlockPos p : lowPriorityTargets) {
-            if (isInventoryEmptyOfNonEggs())
-                return;
-            insertInto(p);
-        }
+        return null;
     }
 
     private void insertInto(BlockPos p) {

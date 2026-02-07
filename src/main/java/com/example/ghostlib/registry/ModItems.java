@@ -44,6 +44,12 @@ public class ModItems {
     public static final DeferredItem<Item> BLUEPRINT = ITEMS.register("blueprint",
             () -> new com.example.ghostlib.item.BlueprintItem(new Item.Properties().stacksTo(64)));
 
+    public static final DeferredItem<Item> TEST_ITEM = ITEMS.register("test_item",
+            () -> new com.example.ghostlib.item.TestGuiItem(new Item.Properties().stacksTo(1)));
+
+    public static final DeferredItem<Item> ASSEMBLER_TEST_ITEM = ITEMS.register("assembler_test_tool",
+            () -> new com.example.ghostlib.item.AssemblerTestItem(new Item.Properties().stacksTo(1)));
+
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }

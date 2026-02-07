@@ -56,7 +56,10 @@ public class ClientModEventSubscriber {
 
     @SubscribeEvent
     public static void registerScreens(RegisterMenuScreensEvent event) {
-        // BlockUI menus are handled automatically by LDLib2
+        event.register(com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(), ModularUIScreenProxy.create());
+        event.register(com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), ModularUIScreenProxy.create());
+        event.register(com.example.ghostlib.registry.ModMenus.TEST_MENU.get(), ModularUIScreenProxy.create());
+        event.register(com.example.ghostlib.registry.ModMenus.ASSEMBLER_TEST_MENU.get(), ModularUIScreenProxy.create());
     }
 
     @SubscribeEvent

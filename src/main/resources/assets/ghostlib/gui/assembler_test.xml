@@ -1,0 +1,25 @@
+<ldlib:ui xmlns:ldlib="com.lowdragmc.lowdraglib2.gui.ui">
+    <ldlib:WidgetGroup x="0" y="0" width="176" height="188" background="MCSprites.RECT">
+        <ldlib:Label id="title" text="Assembler Test" x="5" y="5"/>
+        
+        <!-- 3x3 Grid -->
+        <ldlib:ItemSlot id="in_0" x="30" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_1" x="48" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_2" x="66" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_3" x="30" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_4" x="48" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_5" x="66" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_6" x="30" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_7" x="48" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="in_8" x="66" y="53" width="18" height="18"/>
+        
+        <!-- Output -->
+        <ldlib:ItemSlot id="out_0" x="124" y="35" width="18" height="18"/>
+        
+        <!-- Controls -->
+        <ldlib:Button id="lock_btn" text="Lock" x="90" y="17" width="30" height="18"/>
+        <ldlib:Button id="toggle_btn" text="Off" x="90" y="53" width="30" height="18"/>
+        
+        <ldlib:InventorySlots x="8" y="106"/>
+    </ldlib:WidgetGroup>
+</ldlib:ui>

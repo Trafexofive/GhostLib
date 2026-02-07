@@ -14,6 +14,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -92,12 +93,14 @@ public class LogisticsNetworkManager extends SavedData {
     }
 
     /**
-     * Automatically assign to an existing network if adjacent, or create a new one
+     * Automatically assign to an existing network if adjacent, or create a new one.
+     * If bridging multiple networks, they will be merged.
      */
     public int joinOrCreateNetwork(BlockPos pos, Level level) {
         leaveNetwork(pos);
 
-        // Look for adjacent network members to join their network
+        Set<Integer> adjacentNetworks = new HashSet<>();
+        // Look for adjacent network members
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = -1; dy <= 1; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
@@ -106,22 +109,34 @@ public class LogisticsNetworkManager extends SavedData {
                     BlockPos neighborPos = pos.offset(dx, dy, dz);
                     Integer neighborNetworkId = posToNetworkId.get(neighborPos);
                     if (neighborNetworkId != null) {
-                        // Join the neighbor's network
-                        networkMembers.computeIfAbsent(neighborNetworkId, k -> new HashSet<>()).add(pos);
-                        posToNetworkId.put(pos, neighborNetworkId);
-                        setDirty();
-                        return neighborNetworkId;
+                        adjacentNetworks.add(neighborNetworkId);
                     }
                 }
             }
         }
 
-        // No adjacent networks found, create a new one
-        int newId = nextId++;
-        networkMembers.computeIfAbsent(newId, k -> new HashSet<>()).add(pos);
-        posToNetworkId.put(pos, newId);
-        setDirty();
-        return newId;
+        if (adjacentNetworks.isEmpty()) {
+            // No adjacent networks found, create a new one
+            int newId = nextId++;
+            networkMembers.computeIfAbsent(newId, k -> new HashSet<>()).add(pos);
+            posToNetworkId.put(pos, newId);
+            setDirty();
+            return newId;
+        } else {
+            // Join the first found network
+            Iterator<Integer> it = adjacentNetworks.iterator();
+            int primaryId = it.next();
+            networkMembers.computeIfAbsent(primaryId, k -> new HashSet<>()).add(pos);
+            posToNetworkId.put(pos, primaryId);
+            
+            // Merge all other networks into the primary one
+            while (it.hasNext()) {
+                mergeNetworks(it.next(), primaryId);
+            }
+            
+            setDirty();
+            return primaryId;
+        }
     }
 
     /**

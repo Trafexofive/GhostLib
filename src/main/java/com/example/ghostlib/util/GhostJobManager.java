@@ -157,8 +157,46 @@ public class GhostJobManager {
             }
         }
         
-        // 2. Check nearby Logistics Ports (Simple implementation)
-        // In a full implementation, we'd query the LogisticsNetworkManager
+        // 2. Check Logistics Network
+        LogisticsNetworkManager networkManager = LogisticsNetworkManager.get(level);
+        if (networkManager != null) {
+            Integer networkId = networkManager.getNetworkId(pos);
+            if (networkId == null) {
+                // Try searching for any network in range
+                for (int dx = -16; dx <= 16; dx += 8) {
+                    for (int dy = -8; dy <= 8; dy += 4) {
+                        for (int dz = -16; dz <= 16; dz += 8) {
+                            Integer nearbyId = networkManager.getNetworkId(pos.offset(dx, dy, dz));
+                            if (nearbyId != null) {
+                                networkId = nearbyId;
+                                break;
+                            }
+                        }
+                        if (networkId != null) break;
+                    }
+                    if (networkId != null) break;
+                }
+            }
+
+            if (networkId != null) {
+                Set<BlockPos> members = networkManager.getNetworkMembers(networkId);
+                for (BlockPos memberPos : members) {
+                    if (level.isLoaded(memberPos)) {
+                        net.neoforged.neoforge.items.IItemHandler handler = level.getCapability(
+                            net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, 
+                            memberPos, 
+                            null
+                        );
+                        if (handler != null) {
+                            for (int i = 0; i < handler.getSlots(); i++) {
+                                if (handler.getStackInSlot(i).is(required.getItem())) return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         return false; 
     }
 

@@ -7,13 +7,18 @@ import com.example.ghostlib.registry.ModEntities;
 import com.example.ghostlib.util.GhostJobManager;
 import com.example.ghostlib.util.GhostGUI;
 import com.example.ghostlib.util.LayoutUtils;
+import com.example.ghostlib.util.LogisticsNetworkManager;
 import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ItemSlot;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ProgressBar;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.inventory.InventorySlots;
+import com.lowdragmc.lowdraglib2.gui.ui.styletemplate.MCSprites;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
@@ -26,10 +31,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.energy.EnergyStorage;
 import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.energy.IEnergyStorage;
 import java.util.UUID;
 import org.jetbrains.annotations.Nullable;
 
-public class DronePortBlockEntity extends BlockEntity implements IDronePort, MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUI, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
+public class DronePortBlockEntity extends BlockEntity implements IDronePort, net.minecraft.world.MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUI, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
     private final ItemStackHandler inventory = new ItemStackHandler(9) {
         @Override
         protected void onContentsChanged(int slot) {
@@ -37,23 +44,27 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
         }
     };
     
-    private final EnergyStorage energyStorage = new EnergyStorage(1000000, 10000, 10000);
+    private final EnergyStorage energyStorage = new EnergyStorage(1000000, 50000, 50000); // 50k FE/t
 
     public DronePortBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.DRONE_PORT.get(), pos, state);
     }
 
     @Override
-    public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(Player player) {
+    public ModularUI createUI(Player player) {
+        System.out.println("DronePortBlockEntity: Creating UI for " + player.getName().getString());
         UI ui = UI.empty();
+        ui.getRootElement().layout(l -> LayoutUtils.apply(l, 0f, 0f, 176f, 166f));
+        ui.getRootElement().style(s -> s.background(MCSprites.RECT));
+        
         ui.getRootElement().addChild(new Label().setValue(getDisplayName()).layout(l -> LayoutUtils.margin(l, 5f, 0f, 5f, 0f)));
         
         for (int i = 0; i < 3; i++) {
+            final int row = i;
             for (int j = 0; j < 3; j++) {
+                final int col = j;
                 int index = i * 3 + j;
-                float x = 62f + j * 18f;
-                float y = 17f + i * 18f;
-                ui.getRootElement().addChild(new ItemSlot().bind(inventory, index).layout(l -> { l.left(x); l.top(y); }));
+                ui.getRootElement().addChild(new ItemSlot().bind(inventory, index).layout(l -> LayoutUtils.apply(l, 62f + col * 18f, 17f + row * 18f, 18f, 18f)));
             }
         }
         
@@ -61,12 +72,12 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
                 .bindDataSource(GhostGUI.supplier(() -> (float) energyStorage.getEnergyStored() / energyStorage.getMaxEnergyStored()))
                 .layout(l -> LayoutUtils.apply(l, 10f, 17f, 10f, 54f)));
         
-        ui.getRootElement().addChild(new InventorySlots().layout(l -> { l.bottom(5f); l.left(8f); }));
+        ui.getRootElement().addChild(new InventorySlots().layout(l -> LayoutUtils.apply(l, 8f, 84f, 160f, 76f)));
         return ModularUI.of(ui, player);
     }
 
     @Override
-    public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUIHolder holder) {
+    public ModularUI createUI(com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUIHolder holder) {
         return createUI(holder.player);
     }
 
@@ -75,8 +86,44 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
         return !isRemoved();
     }
 
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (level != null && !level.isClientSide) {
+            LogisticsNetworkManager.get(level).joinOrCreateNetwork(worldPosition, level);
+        }
+    }
+
+    @Override
+    public void setRemoved() {
+        if (level != null && !level.isClientSide) {
+            LogisticsNetworkManager.get(level).leaveNetwork(worldPosition);
+        }
+        super.setRemoved();
+    }
+
     public static void tick(Level level, BlockPos pos, BlockState state, DronePortBlockEntity be) {
         if (level.isClientSide) return;
+
+        // RAPID CHARGING: Check every 2 ticks, pull up to 50,000 FE
+        // Footprint scan: Check 4 blocks down
+        if (level.getGameTime() % 2 == 0) {
+            IEnergyStorage floor = null;
+            for (int i = 1; i <= 4; i++) {
+                BlockPos p = pos.below(i);
+                floor = level.getCapability(Capabilities.EnergyStorage.BLOCK, p, Direction.UP);
+                if (floor != null) break;
+            }
+
+            if (floor != null && floor.canExtract()) {
+                int toPull = Math.min(be.energyStorage.getMaxEnergyStored() - be.energyStorage.getEnergyStored(), 50000);
+                int extracted = floor.extractEnergy(toPull, false);
+                be.energyStorage.receiveEnergy(extracted, false);
+                if (extracted > 0) {
+                    be.setChanged();
+                }
+            }
+        }
 
         if (level.getGameTime() % 20 == 0) {
             be.trySpawnDrone();
@@ -104,7 +151,7 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
     @Nullable
     @Override
     public AbstractContainerMenu createMenu(int windowId, Inventory playerInventory, Player player) {
-        return new com.example.ghostlib.menu.DronePortMenu((MenuType<com.lowdragmc.lowdraglib2.gui.holder.ModularUIContainerMenu>)com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(), windowId, playerInventory, this);
+        return new com.example.ghostlib.menu.DronePortMenu((MenuType)com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(), windowId, playerInventory, this);
     }
 
     private void trySpawnDrone() {
@@ -134,9 +181,32 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
                 boolean canFulfill = false;
                 if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
                     ItemStack req = new ItemStack(job.targetAfter().getBlock().asItem());
+                    // 1. Check local inventory
                     ItemStack taken = extractItem(req, 1, true);
                     if (!taken.isEmpty()) {
                         canFulfill = true;
+                    } else {
+                        // 2. Check Logistics Network
+                        LogisticsNetworkManager networkManager = LogisticsNetworkManager.get(level);
+                        if (networkManager != null) {
+                            Integer networkId = networkManager.getNetworkId(worldPosition);
+                            if (networkId != null) {
+                                for (BlockPos memberPos : networkManager.getNetworkMembers(networkId)) {
+                                    if (level.isLoaded(memberPos)) {
+                                        net.neoforged.neoforge.items.IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, memberPos, null);
+                                        if (handler != null) {
+                                            for (int j = 0; j < handler.getSlots(); j++) {
+                                                if (handler.getStackInSlot(j).is(req.getItem())) {
+                                                    canFulfill = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (canFulfill) break;
+                                }
+                            }
+                        }
                     }
                 } else {
                     canFulfill = true;
@@ -184,5 +254,34 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, Men
             }
         }
         return ItemStack.EMPTY;
+    }
+
+    @Override
+    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.saveAdditional(tag, registries);
+        tag.put("Inventory", inventory.serializeNBT(registries));
+        tag.putInt("Energy", energyStorage.getEnergyStored());
+    }
+
+    @Override
+    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+        super.loadAdditional(tag, registries);
+        if (tag.contains("Inventory")) inventory.deserializeNBT(registries, tag.getCompound("Inventory"));
+        if (tag.contains("Energy")) energyStorage.receiveEnergy(tag.getInt("Energy"), false);
+    }
+
+    @Override
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        return saveWithoutMetadata(registries);
+    }
+
+    @Override
+    public net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ClientGamePacketListener> getUpdatePacket() {
+        return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    @Override
+    public void onDataPacket(net.minecraft.network.Connection net, net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket pkt, HolderLookup.Provider lookupProvider) {
+        if (pkt.getTag() != null) loadAdditional(pkt.getTag(), lookupProvider);
     }
 }

@@ -24,6 +24,7 @@ dependencies {
     implementation 'com.example:factorycore:1.0.0'
     implementation files('../mods/ldlib2-neoforge-1.21.1-2.1.9-all.jar')
     implementation files('../libraries/yoga-1.0.0.jar')
+    implementation files('../mods/kubejs-neoforge-2101.7.2-build.348.jar')
 
 }
 

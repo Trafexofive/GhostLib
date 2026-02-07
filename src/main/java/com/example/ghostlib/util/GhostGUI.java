@@ -11,6 +11,8 @@ public class GhostGUI {
         return new IDataProvider<T>() {
             @Override
             public ISubscription registerListener(Consumer<T> listener) {
+                // LDLib2's ModularUI often checks for IDataProvider to decide how to sync.
+                // A simple supplier might not auto-sync unless the UI container ticks and updates it.
                 return new ISubscription() {
                     @Override
                     public void unsubscribe() {}
@@ -20,6 +22,12 @@ public class GhostGUI {
             @Override
             public T getValue() {
                 return supplier.get();
+            }
+            
+            public boolean isChanged(T lastValue) {
+                T newValue = getValue();
+                if (newValue == null) return lastValue != null;
+                return !newValue.equals(lastValue);
             }
         };
     }

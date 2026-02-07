@@ -3,10 +3,8 @@ package com.example.ghostlib.block;
 import com.example.ghostlib.block.entity.DronePortBlockEntity;
 import com.example.ghostlib.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -59,10 +57,16 @@ public class DronePortBlock extends BaseEntityBlock {
                 }
             }
 
-            // 2. Otherwise open GUI
-            com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.openUI(serverPlayer, pos);
+            // 2. Open GUI using standard openMenu
+            if (level.getBlockEntity(pos) instanceof DronePortBlockEntity port) {
+                serverPlayer.openMenu(port, buf -> {
+                    buf.writeBlockPos(pos);
+                    com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BLOCK_STATE_STREAM_CODEC.encode(buf, state);
+                });
+                return net.minecraft.world.InteractionResult.CONSUME;
+            }
         }
-        return net.minecraft.world.InteractionResult.SUCCESS;
+        return net.minecraft.world.InteractionResult.sidedSuccess(level.isClientSide);
     }
 
     @Nullable

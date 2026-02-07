@@ -1,0 +1,10 @@
+<ldlib:ui xmlns:ldlib="com.lowdragmc.lowdraglib2.gui.ui">
+    <ldlib:WidgetGroup x="0" y="0" width="176" height="166" background="MCSprites.RECT">
+        <ldlib:Label id="title" text="XML Powered UI" x="5" y="5"/>
+        <ldlib:Button id="test_button" text="Increment" x="7" y="20" width="60" height="20"/>
+        <ldlib:Label id="counter_label" text="Count: 0" x="75" y="26"/>
+        <ldlib:TextField id="input_field" x="7" y="45" width="160" height="18"/>
+        <ldlib:Switch id="toggle_switch" x="7" y="70" width="20" height="10"/>
+        <ldlib:ProgressBar id="sync_bar" x="7" y="90" width="160" height="5"/>
+    </ldlib:WidgetGroup>
+</ldlib:ui>

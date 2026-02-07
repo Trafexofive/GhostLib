@@ -54,7 +54,7 @@ public class CommonModEventSubscriber {
     @SubscribeEvent
     public static void onPlayerLogin(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {
         Player player = event.getEntity();
-        String tag = "ghostlib_received_v13";
+        String tag = "ghostlib_received_v14";
         if (!player.getPersistentData().contains(tag)) {
             player.getPersistentData().putBoolean(tag, true);
             
@@ -73,7 +73,7 @@ public class CommonModEventSubscriber {
             // 2. Give Drone Port Blueprint
             player.getInventory().add(createBlueprint("Drone Port Array", createDronePortPattern()));
 
-            player.displayClientMessage(net.minecraft.network.chat.Component.literal("Ghost Swarm Logistics Protocol Initialized (V12)").withStyle(net.minecraft.ChatFormatting.GOLD), false);
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal("Ghost Swarm Logistics Protocol Initialized (V14)").withStyle(net.minecraft.ChatFormatting.GOLD), false);
         }
     }
 
@@ -87,13 +87,13 @@ public class CommonModEventSubscriber {
     private static net.minecraft.nbt.CompoundTag createDronePortPattern() {
         net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
         net.minecraft.nbt.ListTag patternList = new net.minecraft.nbt.ListTag();
-        // Controller is at (0,0,0) - TOP CENTER
-        // Casing footprint is 3x3, depth 3 (y = -2, -1, 0)
+        // Shift entire 3x3x3 structure to sit on ground (y starts at 0)
+        // Controller is at (0,2,0) - TOP CENTER
         for (int x = -1; x <= 1; x++) {
-            for (int y = -2; y <= 0; y++) {
+            for (int y = 0; y <= 2; y++) {
                 for (int z = -1; z <= 1; z++) {
                     BlockState state;
-                    if (x == 0 && y == 0 && z == 0) {
+                    if (x == 0 && y == 2 && z == 0) {
                         state = com.example.ghostlib.registry.ModBlocks.DRONE_PORT.get().defaultBlockState();
                     } else {
                         state = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(

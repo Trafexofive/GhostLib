@@ -21,7 +21,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 
-public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUI, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
+public class LogisticalChestBlockEntity extends BlockEntity implements net.minecraft.world.MenuProvider, com.lowdragmc.lowdraglib2.gui.factory.BlockUIMenuType.BlockUI, com.lowdragmc.lowdraglib2.gui.factory.IContainerUIHolder {
     private final ItemStackHandler inventory = new ItemStackHandler(27) {
         @Override
         protected void onContentsChanged(int slot) { setChanged(); }
@@ -29,6 +29,11 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
 
     public LogisticalChestBlockEntity(BlockPos pos, BlockState state) {
         super(com.example.ghostlib.registry.ModBlockEntities.LOGISTICAL_CHEST.get(), pos, state);
+    }
+
+    @Override
+    public net.minecraft.world.inventory.AbstractContainerMenu createMenu(int windowId, net.minecraft.world.entity.player.Inventory inventory, net.minecraft.world.entity.player.Player player) {
+        return new com.example.ghostlib.menu.LogisticalChestMenu((net.minecraft.world.inventory.MenuType)com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), windowId, inventory, this);
     }
 
     @Override
@@ -79,11 +84,6 @@ public class LogisticalChestBlockEntity extends BlockEntity implements MenuProvi
     @Override
     public Component getDisplayName() {
         return Component.literal("Logistical Chest (" + getChestType().getSerializedName() + ")");
-    }
-
-    @Override
-    public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        return new com.example.ghostlib.menu.LogisticalChestMenu((MenuType<com.lowdragmc.lowdraglib2.gui.holder.ModularUIContainerMenu>)com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), containerId, inventory, this);
     }
 
     public LogisticalChestBlock.ChestType getChestType() {

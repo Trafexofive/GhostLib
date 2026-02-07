@@ -27,7 +27,41 @@ public class GhostCommand {
                     .executes(context -> loadBlueprint(context.getSource(), StringArgumentType.getString(context, "name")))
                 )
             )
+            .then(Commands.literal("debug_gui")
+                .executes(context -> openDebugGui(context.getSource()))
+            )
+            .then(Commands.literal("assembler")
+                .executes(context -> openAssemblerGui(context.getSource()))
+            )
         );
+    }
+
+    private static int openAssemblerGui(CommandSourceStack source) {
+        try {
+            if (source.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+                System.out.println("GhostCommand: Attempting to open Assembler GUI for " + player.getName().getString());
+                // Use the registered singleton item
+                player.openMenu((net.minecraft.world.MenuProvider)com.example.ghostlib.registry.ModItems.ASSEMBLER_TEST_ITEM.get(), buf -> {
+                    buf.writeBoolean(true); // dummy main hand
+                });
+                return 1;
+            }
+        } catch (Exception e) {
+            System.err.println("GhostCommand: Error opening Assembler GUI");
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    private static int openDebugGui(CommandSourceStack source) {
+        if (source.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            // Use the registered singleton item
+            player.openMenu((net.minecraft.world.MenuProvider)com.example.ghostlib.registry.ModItems.TEST_ITEM.get(), buf -> {
+                buf.writeBoolean(true); // isMainHand dummy
+            });
+            return 1;
+        }
+        return 0;
     }
 
     private static int saveBlueprint(CommandSourceStack source, String name) {
