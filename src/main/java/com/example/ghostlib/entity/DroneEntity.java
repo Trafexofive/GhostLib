@@ -287,7 +287,7 @@ public class DroneEntity extends PathfinderMob {
         if (currentJob != null && droneState != DroneState.IDLE && droneState != DroneState.DUMPING_ITEMS
                 && droneState != DroneState.CHARGING) {
             if (!GhostJobManager.get(level()).isAssignedTo(currentJob.pos(), this.getUUID())) {
-                this.currentJob = null;
+                releaseCurrentJob();
                 this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
             }
         }
@@ -560,7 +560,7 @@ public class DroneEntity extends PathfinderMob {
         if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job no longer exists at "
                     + currentJob.pos() + ", releasing and finding new job");
-            this.currentJob = null;
+            releaseCurrentJob();
             this.droneState = isInventoryEmpty() ? DroneState.FINDING_JOB : DroneState.DUMPING_ITEMS;
             return;
         }
@@ -568,8 +568,7 @@ public class DroneEntity extends PathfinderMob {
         // CHECK FOR UNDO: Ghost Entity Missing?
         if (currentJob.type() == GhostJobManager.JobType.CONSTRUCTION && !(level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity)) {
              com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job invalid (Ghost Missing) at " + currentJob.pos() + ". Aborting.");
-             GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-             this.currentJob = null;
+             releaseCurrentJob();
              this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
              return;
         }
@@ -645,10 +644,7 @@ public class DroneEntity extends PathfinderMob {
                     if (!hasSpace()) {
                         GhostLib.LOGGER.warn("Drone inventory full, cannot take item from player");
                         this.droneState = DroneState.DUMPING_ITEMS;
-                        if (currentJob != null) {
-                            GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-                        }
-                        this.currentJob = null;
+                        releaseCurrentJob();
                         return;
                     }
 
@@ -678,10 +674,7 @@ public class DroneEntity extends PathfinderMob {
                 if (currentJob != null && level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
                     gbe.setState(GhostBlockEntity.GhostState.MISSING_ITEMS);
                 }
-                if (currentJob != null) {
-                    GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-                }
-                currentJob = null;
+                releaseCurrentJob();
                 waitTicks = 100;
                 this.droneState = DroneState.IDLE;
             }
@@ -805,7 +798,7 @@ public class DroneEntity extends PathfinderMob {
         if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job no longer exists at "
                     + currentJob.pos() + ", releasing and finding new job");
-            this.currentJob = null;
+            releaseCurrentJob();
             this.droneState = isInventoryEmpty() ? DroneState.FINDING_JOB : DroneState.DUMPING_ITEMS;
             return;
         }
@@ -813,8 +806,7 @@ public class DroneEntity extends PathfinderMob {
         // CHECK FOR UNDO: Ghost Entity Missing?
         if (currentJob.type() == GhostJobManager.JobType.CONSTRUCTION && !(level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity)) {
              com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " build job invalid (Ghost Missing) at " + currentJob.pos() + ". Aborting.");
-             GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-             this.currentJob = null;
+             releaseCurrentJob();
              this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
              return;
         }
@@ -857,7 +849,7 @@ public class DroneEntity extends PathfinderMob {
             if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
                 com.example.ghostlib.util.GhostLogger.drone(
                         "Drone " + this.getId() + " job was claimed by another drone at " + pos + ", aborting build");
-                this.currentJob = null;
+                releaseCurrentJob();
                 this.droneState = DroneState.FINDING_JOB;
                 return;
             }
@@ -909,7 +901,7 @@ public class DroneEntity extends PathfinderMob {
                         .drone("ERROR: Drone " + this.getId() + " setBlock FAILED at " + pos);
                 // Return item to inventory
                 this.inventory.addItem(usedStack);
-                this.currentJob = null;
+                releaseCurrentJob();
                 this.droneState = DroneState.FINDING_JOB;
                 return;
             }
@@ -971,7 +963,7 @@ public class DroneEntity extends PathfinderMob {
         if (!GhostJobManager.get(level()).jobExistsAt(currentJob.pos())) {
             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId()
                     + " deconstruct job no longer exists at " + currentJob.pos() + ", releasing and finding new job");
-            this.currentJob = null;
+            releaseCurrentJob();
             this.droneState = DroneState.FINDING_JOB;
             return;
         }
@@ -1004,7 +996,7 @@ public class DroneEntity extends PathfinderMob {
 
             // Verify assignment
             if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
-                this.currentJob = null;
+                releaseCurrentJob();
                 this.droneState = DroneState.FINDING_JOB;
                 return;
             }
@@ -1412,10 +1404,27 @@ public class DroneEntity extends PathfinderMob {
         }
     }
 
-    private void resetToIdle() {
-        if (currentJob != null)
+    private void releaseCurrentJob() {
+        if (currentJob != null) {
+            // Attempt to reset ghost state if we are abandoning it
+            if (level().isLoaded(currentJob.pos())) {
+                if (level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity gbe) {
+                    GhostBlockEntity.GhostState state = gbe.getCurrentState();
+                    // Only reset if it looks like WE were working on it
+                    if (state == GhostBlockEntity.GhostState.FETCHING || 
+                        state == GhostBlockEntity.GhostState.INCOMING || 
+                        state == GhostBlockEntity.GhostState.REMOVING) {
+                        gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
+                    }
+                }
+            }
             GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-        this.currentJob = null;
+            this.currentJob = null;
+        }
+    }
+
+    private void resetToIdle() {
+        releaseCurrentJob();
         this.droneState = DroneState.IDLE;
     }
 
