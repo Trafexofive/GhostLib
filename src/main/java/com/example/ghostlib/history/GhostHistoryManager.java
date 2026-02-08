@@ -187,6 +187,8 @@ public class GhostHistoryManager {
                         // INSTANT UNDO: Ghost markers are meta-data. Reverting them should be instant.
                         // We do NOT want to dispatch drones to break "nothing".
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                        // CRITICAL: Ensure the job is removed from the manager so drones don't chase a phantom job
+                        jobManager.removeJob(pos);
                     }
                 } else {
                     // We want to revert to a BLOCK (Placement).
