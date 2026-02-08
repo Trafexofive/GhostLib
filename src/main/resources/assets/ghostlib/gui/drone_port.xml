@@ -1,0 +1,23 @@
+<ldlib:ui xmlns:ldlib="com.lowdragmc.lowdraglib2.gui.ui">
+    <ldlib:WidgetGroup x="0" y="0" width="176" height="166" background="MCSprites.RECT">
+        <ldlib:Label id="title" text="Drone Port" x="5" y="5"/>
+        
+        <!-- Energy Bar -->
+        <ldlib:ProgressBar id="energy_bar" x="10" y="17" width="10" height="54"/>
+        
+        <!-- 3x3 Drone Grid -->
+        <ldlib:ItemSlot id="slot_0" x="62" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_1" x="80" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_2" x="98" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_3" x="62" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_4" x="80" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_5" x="98" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_6" x="62" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_7" x="80" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_8" x="98" y="53" width="18" height="18"/>
+        
+        <!-- Player Inventory (Implicitly handled by ModularUIContainerMenu if using standard templates, 
+             but we'll include the widget here for visual alignment if needed by the loader) -->
+        <ldlib:InventorySlots x="8" y="84" width="160" height="76"/>
+    </ldlib:WidgetGroup>
+</ldlib:ui>

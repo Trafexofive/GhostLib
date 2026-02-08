@@ -1,0 +1,38 @@
+<ldlib:ui xmlns:ldlib="com.lowdragmc.lowdraglib2.gui.ui">
+    <ldlib:WidgetGroup x="0" y="0" width="176" height="166" background="MCSprites.RECT">
+        <ldlib:Label id="title" text="Logistical Chest" x="5" y="5"/>
+        
+        <!-- 3x9 Grid -->
+        <ldlib:ItemSlot id="slot_0" x="8" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_1" x="26" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_2" x="44" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_3" x="62" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_4" x="80" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_5" x="98" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_6" x="116" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_7" x="134" y="17" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_8" x="152" y="17" width="18" height="18"/>
+        
+        <ldlib:ItemSlot id="slot_9" x="8" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_10" x="26" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_11" x="44" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_12" x="62" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_13" x="80" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_14" x="98" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_15" x="116" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_16" x="134" y="35" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_17" x="152" y="35" width="18" height="18"/>
+        
+        <ldlib:ItemSlot id="slot_18" x="8" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_19" x="26" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_20" x="44" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_21" x="62" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_22" x="80" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_23" x="98" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_24" x="116" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_25" x="134" y="53" width="18" height="18"/>
+        <ldlib:ItemSlot id="slot_26" x="152" y="53" width="18" height="18"/>
+        
+        <ldlib:InventorySlots x="8" y="84" width="160" height="76"/>
+    </ldlib:WidgetGroup>
+</ldlib:ui>

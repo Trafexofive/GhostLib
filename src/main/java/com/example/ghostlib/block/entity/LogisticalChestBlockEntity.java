@@ -6,16 +6,15 @@ import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ItemSlot;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
-import com.lowdragmc.lowdraglib2.gui.ui.elements.inventory.InventorySlots;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -32,27 +31,31 @@ public class LogisticalChestBlockEntity extends BlockEntity implements net.minec
     }
 
     @Override
-    public net.minecraft.world.inventory.AbstractContainerMenu createMenu(int windowId, net.minecraft.world.entity.player.Inventory inventory, net.minecraft.world.entity.player.Player player) {
-        return new com.example.ghostlib.menu.LogisticalChestMenu((net.minecraft.world.inventory.MenuType)com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), windowId, inventory, this);
+    public AbstractContainerMenu createMenu(int windowId, Inventory inventory, Player player) {
+        return new com.example.ghostlib.menu.LogisticalChestMenu((MenuType)com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), windowId, inventory, this);
     }
 
     @Override
     public ModularUI createUI(Player player) {
-        UI ui = UI.empty();
-        ui.getRootElement().addChild(new Label().setValue(getDisplayName()).layout(l -> l.marginTop(5).marginLeft(5)));
-        
-        // 3x9 Inventory
-        for (int i = 0; i < 3; i++) {
-            final int row = i;
-            for (int j = 0; j < 9; j++) {
-                final int col = j;
-                int index = i * 9 + j;
-                ui.getRootElement().addChild(new ItemSlot().bind(inventory, index).layout(l -> l.left(8f + col * 18f).top(17f + row * 18f)));
+        try {
+            ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("ghostlib", "gui/logistical_chest.xml");
+            org.w3c.dom.Document doc = com.lowdragmc.lowdraglib2.utils.XmlUtils.loadXml(loc);
+            if (doc == null) return ModularUI.of(UI.empty(), player);
+            UI ui = UI.of(doc);
+
+            ui.select("title", Label.class).forEach(l -> l.setValue(getDisplayName()));
+
+            // Bind 3x9 Grid
+            for (int i = 0; i < 27; i++) {
+                final int index = i;
+                ui.select("slot_" + i, ItemSlot.class).forEach(slot -> slot.bind(inventory, index));
             }
+
+            return ModularUI.of(ui, player);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ModularUI.of(UI.empty(), player);
         }
-        
-        ui.getRootElement().addChild(new InventorySlots().layout(l -> l.bottom(5).left(8)));
-        return ModularUI.of(ui, player);
     }
 
     @Override
