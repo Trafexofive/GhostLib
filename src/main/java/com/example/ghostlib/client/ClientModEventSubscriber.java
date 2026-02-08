@@ -421,33 +421,48 @@ public class ClientModEventSubscriber {
                             : lookPos).offset(ClientGlobalSelection.patternOffset);
                     BlockPos end = lookPos.offset(ClientGlobalSelection.patternOffset);
 
+                    CompoundTag tag = ClientClipboard.getClipboard();
+                    int sizeX = Math.max(1, tag.getInt("SizeX"));
+                    int sizeY = Math.max(1, tag.getInt("SizeY"));
+                    int sizeZ = Math.max(1, tag.getInt("SizeZ"));
+
                     if (ClientGlobalSelection.anchorPos != null) {
-                        renderTiledPreview(mc, player, poseStack, bufferSource, ClientClipboard.getClipboard(), start,
-                                end);
+                        renderTiledPreview(mc, player, poseStack, bufferSource, tag, start, end);
+                        
+                        // Draw White Outline for the entire tiled area
+                        int totalMinX = Math.min(start.getX(), end.getX());
+                        int totalMinZ = Math.min(start.getZ(), end.getZ());
+                        int totalMaxX = Math.max(start.getX(), end.getX()) + sizeX - 1;
+                        int totalMaxZ = Math.max(start.getZ(), end.getZ()) + sizeZ - 1;
+                        BlockPos totalMin = new BlockPos(totalMinX, start.getY(), totalMinZ);
+                        BlockPos totalMax = new BlockPos(totalMaxX, start.getY() + sizeY - 1, totalMaxZ);
+                        drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), totalMin, totalMax, 1f, 1f, 1f, 0f);
                     } else {
                         // 1. Primary Preview
-                        renderPatternPreview(mc, player, poseStack, bufferSource, ClientClipboard.getClipboard(),
+                        renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                 start, 1, Direction.NORTH, 1.0f, 1.0f, 1.0f);
                         
+                        // Draw White Outline for the single pattern
+                        BlockPos patternMax = start.offset(sizeX - 1, sizeY - 1, sizeZ - 1);
+                        drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), start, patternMax, 1f, 1f, 1f, 0f);
+
                         // 2. Smart Tiling Previews (One in each 4 directions)
                         // ONLY if crouching
                         if (player.isCrouching()) {
-                            int sizeX = Math.max(1, ClientClipboard.getClipboard().getInt("SizeX"));
-                            int sizeZ = Math.max(1, ClientClipboard.getClipboard().getInt("SizeZ"));
                             int stepX = sizeX + ClientGlobalSelection.tilingSpacingX;
                             int stepZ = sizeZ + ClientGlobalSelection.tilingSpacingZ;
 
                             // North
-                            renderPatternPreview(mc, player, poseStack, bufferSource, ClientClipboard.getClipboard(),
+                            renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.north(stepZ), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
                             // South
-                            renderPatternPreview(mc, player, poseStack, bufferSource, ClientClipboard.getClipboard(),
+                            renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.south(stepZ), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
                             // East
-                            renderPatternPreview(mc, player, poseStack, bufferSource, ClientClipboard.getClipboard(),
+                            renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.east(stepX), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
                             // West
-                            renderPatternPreview(mc, player, poseStack, bufferSource, ClientClipboard.getClipboard(),
+                            renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.west(stepX), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
                         }
                     }
