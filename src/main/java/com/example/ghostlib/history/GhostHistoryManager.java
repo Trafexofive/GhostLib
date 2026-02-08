@@ -21,17 +21,11 @@ import java.io.File;
 
 /**
  * Manages the global Undo/Redo history for all players.
- * 
- * <p>Key Responsibilities:</p>
- * <ul>
- *   <li><b>State Tracking:</b> Records blocks before and after changes.</li>
- *   <li><b>Persistence:</b> Saves history to disk.</li>
- *   <li><b>Undo/Redo:</b> Reverts changes by generating Drone Jobs (Construction/Deconstruction).</li>
- * </ul>
+ * High-fidelity: Persists BlockEntity data (delivered items, machine state) to prevent 'slurping' and state loss.
  */
 public class GhostHistoryManager {
     
-    public record StateChange(BlockPos pos, BlockState oldState, BlockState newState) {}
+    public record StateChange(BlockPos pos, BlockState oldState, BlockState newState, @org.jetbrains.annotations.Nullable CompoundTag oldData, @org.jetbrains.annotations.Nullable CompoundTag newData) {}
 
     public record HistoryEntry(
         List<StateChange> changes
@@ -89,6 +83,8 @@ public class GhostHistoryManager {
                     cTag.put("Pos", NbtUtils.writeBlockPos(change.pos));
                     cTag.put("Old", NbtUtils.writeBlockState(change.oldState));
                     cTag.put("New", NbtUtils.writeBlockState(change.newState));
+                    if (change.oldData != null) cTag.put("OldData", change.oldData);
+                    if (change.newData != null) cTag.put("NewData", change.newData);
                     changeTagList.add(cTag);
                 }
                 entryTag.put("Changes", changeTagList);
@@ -120,7 +116,9 @@ public class GhostHistoryManager {
                     changes.add(new StateChange(
                         NbtUtils.readBlockPos(cTag, "Pos").orElse(BlockPos.ZERO),
                         NbtUtils.readBlockState(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), cTag.getCompound("Old")),
-                        NbtUtils.readBlockState(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), cTag.getCompound("New"))
+                        NbtUtils.readBlockState(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), cTag.getCompound("New")),
+                        cTag.contains("OldData") ? cTag.getCompound("OldData") : null,
+                        cTag.contains("NewData") ? cTag.getCompound("NewData") : null
                     ));
                 }
                 history.addLast(new HistoryEntry(changes));
@@ -163,62 +161,58 @@ public class GhostHistoryManager {
         try {
             for (StateChange change : entry.changes) {
                 BlockState targetState = isUndo ? change.oldState : change.newState;
+                CompoundTag targetData = isUndo ? change.oldData : change.newData;
                 
-                // PERFORMANCE & UX OPTIMIZATION: "Debris Exclusion"
-                // When placing a structure, drones often clear away grass, snow, or flowers.
-                // Reverting the placement should logically result in a clean area, not 
-                // a construction queue to "re-plant" every individual piece of grass.
-                // We treat all 'replaceable' blocks as Air during Undo.
+                // DEBRIS EXCLUSION
                 if (isUndo && targetState.canBeReplaced(new net.minecraft.world.item.context.BlockPlaceContext(player, net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY, new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.ZERO, net.minecraft.core.Direction.UP, change.pos, false)))) {
                     targetState = Blocks.AIR.defaultBlockState();
+                    targetData = null;
                 }
 
                 BlockPos pos = change.pos;
                 BlockState currentWorldState = level.getBlockState(pos);
 
-                // ZERO FORCE: Order a deconstruction job for anything in the way.
-                // ZERO FORCE: Order a deconstruction job for anything in the way.
                 if (targetState.isAir()) {
-                    // We want to revert to AIR (Removal).
                     if (!currentWorldState.isAir() && !(currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock)) {
-                        // Real block in way: Mark for deconstruction
                         jobManager.registerDirectDeconstruct(pos, Blocks.AIR.defaultBlockState(), level);
                     } else if (currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock) {
-                        // INSTANT UNDO: Ghost markers are meta-data. Reverting them should be instant.
-                        // We do NOT want to dispatch drones to break "nothing".
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
-                        // CRITICAL: Ensure the job is removed from the manager so drones don't chase a phantom job
+                        jobManager.removeJob(pos);
+                    } else {
                         jobManager.removeJob(pos);
                     }
                 } else {
-                    // We want to revert to a BLOCK (Placement).
                     if (!currentWorldState.equals(targetState)) {
                         if (!currentWorldState.isAir() && !(currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock)) {
-                            // Block in the way: Deconstruct it, then the drone will place the Ghost marker.
                             jobManager.registerDirectDeconstruct(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), targetState, level);
                         } else {
-                            // Area is Air or already a ghost marker. Place/Update the marker.
-                            // FORCE CLEAN: Ensure no stale jobs exist before placing the new ghost.
+                            // CLEAN SLATE
                             jobManager.removeJob(pos);
-                            
                             level.setBlock(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
                             if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
                                 gbe.setTargetState(targetState);
+                                if (targetData != null) gbe.loadWithComponents(targetData, level.registryAccess());
                                 gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                             }
                         }
+                    } else {
+                        // World matches state, but maybe needs NBT restoration (e.g. progress in ghost)
+                        if (targetData != null && level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.BlockEntity be) {
+                            be.loadWithComponents(targetData, level.registryAccess());
+                            be.setChanged();
+                        }
+                        jobManager.removeJob(pos);
                     }
                 }
             }
             jobManager.syncToClients(level);
             targetMap.computeIfAbsent(player.getUUID(), k -> new ArrayDeque<>()).push(entry);
             
-            // Wake up all drones to handle the new state immediately
-            if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                for (net.minecraft.world.entity.Entity entity : serverLevel.getAllEntities()) {
-                    if (entity instanceof com.example.ghostlib.entity.DroneEntity drone) {
-                        drone.wakeUp();
-                    }
+            // WAKE UP DRONES (Optimized Doctrine Search)
+            if (level instanceof net.minecraft.server.level.ServerLevel sl) {
+                net.minecraft.world.phys.AABB area = new net.minecraft.world.phys.AABB(player.blockPosition()).inflate(256);
+                for (com.example.ghostlib.entity.DroneEntity drone : sl.getEntitiesOfClass(com.example.ghostlib.entity.DroneEntity.class, area)) {
+                    drone.wakeUp();
                 }
             }
         } finally {

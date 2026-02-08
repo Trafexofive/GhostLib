@@ -28,17 +28,25 @@ public class HistoryEventSubscriber {
         if (GhostHistoryManager.isProcessingHistory) return;
 
         BlockState oldState = event.getBlockSnapshot().getState();
+        BlockPos pos = event.getPos();
+        
+        // Capture old data
+        net.minecraft.nbt.CompoundTag oldData = null;
+        net.minecraft.world.level.block.entity.BlockEntity be = event.getLevel().getBlockEntity(pos);
+        if (be != null) oldData = be.saveWithFullMetadata(event.getLevel().registryAccess());
+
         if (oldState.canBeReplaced()) {
             oldState = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+            oldData = null;
         }
 
         BlockState newState = event.getPlacedBlock();
-        BlockPos pos = event.getPos();
         
-        System.out.println("GhostHistory Record: " + oldState + " -> " + newState + " at " + pos);
-
+        // Capture new data (if it exists immediately, rare for placement event but good for consistency)
+        net.minecraft.nbt.CompoundTag newData = null;
+        
         GhostHistoryManager.recordAction(player, Collections.singletonList(
-            new GhostHistoryManager.StateChange(pos.immutable(), oldState, newState)
+            new GhostHistoryManager.StateChange(pos.immutable(), oldState, newState, oldData, newData)
         ));
     }
 
@@ -52,8 +60,13 @@ public class HistoryEventSubscriber {
         BlockState oldState = event.getState();
         BlockPos pos = event.getPos();
         
+        // Capture old data
+        net.minecraft.nbt.CompoundTag oldData = null;
+        net.minecraft.world.level.block.entity.BlockEntity be = event.getLevel().getBlockEntity(pos);
+        if (be != null) oldData = be.saveWithFullMetadata(event.getLevel().registryAccess());
+
         GhostHistoryManager.recordAction(player, Collections.singletonList(
-            new GhostHistoryManager.StateChange(pos.immutable(), oldState, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState())
+            new GhostHistoryManager.StateChange(pos.immutable(), oldState, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), oldData, null)
         ));
     }
 }

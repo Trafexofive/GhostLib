@@ -23,13 +23,6 @@ import java.util.stream.StreamSupport;
 
 /**
  * Handles server-side game events for GhostLib.
- * <p>Responsibilities:</p>
- * <ul>
- *   <li><b>Command Registration:</b> Registers the /ghost command.</li>
- *   <li><b>History Tracking:</b> Records block placements and breaks for Undo/Redo.</li>
- *   <li><b>Persistence:</b> Triggers history saving/loading on server lifecycle events.</li>
- *   <li><b>Drone Spawning:</b> Handles auto-deployment of personal drones from player inventory.</li>
- * </ul>
  */
 @EventBusSubscriber(modid = GhostLib.MODID, bus = EventBusSubscriber.Bus.GAME)
 public class CommonModEventSubscriber {
@@ -70,7 +63,6 @@ public class CommonModEventSubscriber {
             player.getInventory().add(new ItemStack(ModItems.ACTIVE_PROVIDER_CHEST.get(), 64));
             player.getInventory().add(new ItemStack(ModItems.BUFFER_CHEST.get(), 64));
 
-            // 2. Give Drone Port Blueprint
             player.getInventory().add(createBlueprint("Drone Port Array", createDronePortPattern()));
 
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("Ghost Swarm Logistics Protocol Initialized (V14)").withStyle(net.minecraft.ChatFormatting.GOLD), false);
@@ -87,8 +79,6 @@ public class CommonModEventSubscriber {
     private static net.minecraft.nbt.CompoundTag createDronePortPattern() {
         net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
         net.minecraft.nbt.ListTag patternList = new net.minecraft.nbt.ListTag();
-        // Shift entire 3x3x3 structure to sit on ground (y starts at 0)
-        // Controller is at (0,2,0) - TOP CENTER
         for (int x = -1; x <= 1; x++) {
             for (int y = 0; y <= 2; y++) {
                 for (int z = -1; z <= 1; z++) {
@@ -112,54 +102,38 @@ public class CommonModEventSubscriber {
         return tag;
     }
 
-    /**
-     * Records manual block placements to history.
-     * Uses the snapshot state (old state) to ensure Undo removes the block.
-     */
     @SubscribeEvent
     public static void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
         if (event.getEntity() instanceof Player player && !event.getLevel().isClientSide() && !GhostHistoryManager.isProcessingHistory) {
             BlockPos pos = event.getPos().immutable();
-            // Clear any pending automated work here
             com.example.ghostlib.util.GhostJobManager.get(player.level()).removeJob(pos);
 
             BlockState oldState = event.getBlockSnapshot().getState();
             TICK_CHANGES.computeIfAbsent(player.getUUID(), k -> new ArrayList<>()).add(
-                new GhostHistoryManager.StateChange(pos, oldState, event.getPlacedBlock())
+                new GhostHistoryManager.StateChange(pos, oldState, event.getPlacedBlock(), null, null)
             );
         }
     }
 
-    /**
-     * Records manual block breaks to history.
-     * Records the transition from the existing block state to AIR.
-     */
     @SubscribeEvent
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
         Player player = event.getPlayer();
         if (player != null && !player.level().isClientSide() && !GhostHistoryManager.isProcessingHistory) {
             BlockPos pos = event.getPos().immutable();
-            // Clear any pending automated work here
             com.example.ghostlib.util.GhostJobManager.get(player.level()).removeJob(pos);
 
             TICK_CHANGES.computeIfAbsent(player.getUUID(), k -> new ArrayList<>()).add(
-                new GhostHistoryManager.StateChange(pos, event.getState(), Blocks.AIR.defaultBlockState())
+                new GhostHistoryManager.StateChange(pos, event.getState(), Blocks.AIR.defaultBlockState(), null, null)
             );
         }
     }
 
-    /**
-     * Aggregates tick changes and commits them to history.
-     * This prevents fragmentation of atomic actions (like multi-block placements).
-     */
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
-        // 1. Tick Job Manager
         for (ServerLevel sl : event.getServer().getAllLevels()) {
             com.example.ghostlib.util.GhostJobManager.get(sl).tick(sl);
         }
 
-        // 2. Commit History Changes
         if (!TICK_CHANGES.isEmpty()) {
             for (var entry : TICK_CHANGES.entrySet()) {
                 Player player = event.getServer().getPlayerList().getPlayer(entry.getKey());
@@ -176,14 +150,12 @@ public class CommonModEventSubscriber {
         Player player = event.getEntity();
         if (player.level().isClientSide || player.level().getGameTime() % 40 != 0) return;
 
-        // Auto-deploy Drones from Inventory
         ItemStack eggStack = new ItemStack(ModItems.DRONE_SPAWN_EGG.get());
         int eggSlot = player.getInventory().findSlotMatchingItem(eggStack);
         
         if (eggSlot != -1) {
             BlockPos pPos = player.blockPosition();
             boolean ghostsNearby = false;
-            // Check radius for any construction or deconstruction markers
             for (BlockPos pos : BlockPos.betweenClosed(pPos.offset(-16, -8, -16), pPos.offset(16, 8, 16))) {
                 if (player.level().getBlockState(pos).getBlock() instanceof GhostBlock || 
                     com.example.ghostlib.util.GhostJobManager.get(player.level()).isDeconstructAt(pos)) {
@@ -202,7 +174,7 @@ public class CommonModEventSubscriber {
                     player.getInventory().getItem(eggSlot).shrink(1);
                     DroneEntity drone = new DroneEntity(ModEntities.DRONE.get(), player.level());
                     drone.setPos(player.getX(), player.getY() + 2.0, player.getZ());
-                    drone.setOwner(player); // Fix: Assign owner so it can return!
+                    drone.setOwner(player);
                     player.level().addFreshEntity(drone);
                 }
             }
