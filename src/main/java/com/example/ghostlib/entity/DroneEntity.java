@@ -220,6 +220,13 @@ public class DroneEntity extends PathfinderMob {
 
         consumeEnergy();
 
+        // SANITY CHECK: Fix "Brain Dead" drones stuck in IDLE/FINDING with a stale job
+        if (currentJob != null && (droneState == DroneState.IDLE || droneState == DroneState.FINDING_JOB)) {
+            com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " found in invalid state " + droneState + " with active job. Forcing release.");
+            releaseCurrentJob();
+            this.droneState = DroneState.IDLE;
+        }
+
         if (waitTicks > 0) {
             waitTicks--;
             return;
