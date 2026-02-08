@@ -184,11 +184,9 @@ public class GhostHistoryManager {
                         // Real block in way: Mark for deconstruction
                         jobManager.registerDirectDeconstruct(pos, Blocks.AIR.defaultBlockState(), level);
                     } else if (currentWorldState.getBlock() instanceof com.example.ghostlib.block.GhostBlock) {
-                        // NO MAGIC: Even for ghosts, mark them for removal so a drone can physically clear them.
-                        // This maintains the 'physical presence' requirement.
-                        if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
-                            gbe.setState(GhostBlockEntity.GhostState.TO_REMOVE);
-                        }
+                        // INSTANT UNDO: Ghost markers are meta-data. Reverting them should be instant.
+                        // We do NOT want to dispatch drones to break "nothing".
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
                     }
                 } else {
                     // We want to revert to a BLOCK (Placement).
