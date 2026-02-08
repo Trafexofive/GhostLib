@@ -2,21 +2,36 @@ package com.example.ghostlib.client.util;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.core.registries.Registries;
+import java.io.File;
+import java.io.IOException;
 import java.util.LinkedList;
 
 public class ClientClipboard {
     private static final int MAX_HISTORY = 10;
     private static final LinkedList<CompoundTag> history = new LinkedList<>();
     private static int currentIndex = 0;
+    private static final File CLIPBOARD_FILE = new File(Minecraft.getInstance().gameDirectory, "ghostlib_clipboard.nbt");
+    private static boolean loaded = false;
+
+    private static void ensureLoaded() {
+        if (!loaded) {
+            load();
+            loaded = true;
+        }
+    }
 
     public static void setClipboard(CompoundTag tag) {
+        ensureLoaded();
         if (tag == null || tag.isEmpty())
             return;
         if (!history.isEmpty() && history.getFirst().equals(tag)) {
@@ -29,9 +44,11 @@ public class ClientClipboard {
             history.removeLast();
         }
         currentIndex = 0;
+        save();
     }
 
     public static CompoundTag getClipboard() {
+        ensureLoaded();
         if (history.isEmpty())
             return null;
         if (currentIndex >= history.size())
@@ -40,16 +57,19 @@ public class ClientClipboard {
     }
 
     public static boolean hasClipboard() {
+        ensureLoaded();
         return !history.isEmpty();
     }
 
     public static void cycle() {
+        ensureLoaded();
         if (history.isEmpty())
             return;
         currentIndex = (currentIndex + 1) % history.size();
     }
 
     public static int getHistorySize() {
+        ensureLoaded();
         return history.size();
     }
 
@@ -57,7 +77,42 @@ public class ClientClipboard {
         return currentIndex;
     }
 
+    private static void save() {
+        try {
+            CompoundTag root = new CompoundTag();
+            ListTag list = new ListTag();
+            for (CompoundTag tag : history) {
+                list.add(tag);
+            }
+            root.put("History", list);
+            NbtIo.writeCompressed(root, CLIPBOARD_FILE.toPath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void load() {
+        if (!CLIPBOARD_FILE.exists()) return;
+        try {
+            CompoundTag root = NbtIo.readCompressed(CLIPBOARD_FILE.toPath(), NbtAccounter.unlimitedHeap());
+            if (root.contains("History", Tag.TAG_LIST)) {
+                ListTag list = root.getList("History", Tag.TAG_COMPOUND);
+                history.clear();
+                for (int i = 0; i < list.size(); i++) {
+                    history.add(list.getCompound(i));
+                }
+                // Enforce limit just in case
+                while (history.size() > MAX_HISTORY) {
+                    history.removeLast();
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     public static void rotate() {
+        ensureLoaded();
         CompoundTag tag = getClipboard();
         if (tag == null)
             return;
@@ -96,9 +151,11 @@ public class ClientClipboard {
         newTag.putInt("SizeZ", sizeX);
 
         history.set(currentIndex, newTag);
+        save();
     }
 
     public static void flip() {
+        ensureLoaded();
         CompoundTag tag = getClipboard();
         if (tag == null)
             return;
@@ -135,5 +192,6 @@ public class ClientClipboard {
         // Size doesn't swap on flip
 
         history.set(currentIndex, newTag);
+        save();
     }
 }
