@@ -126,8 +126,7 @@ public class GhostActionHandler {
                         // If not forcing, we skip obstructed positions.
                     } else {
                         // Area is Air or a Ghost marker. Safe to place/update the marker.
-                        changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState,
-                                ModBlocks.GHOST_BLOCK.get().defaultBlockState()));
+                        changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState));
 
                         level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
                         if (level.getBlockEntity(target) instanceof GhostBlockEntity ghost) {
