@@ -1434,6 +1434,14 @@ public class DroneEntity extends PathfinderMob {
         }
     }
 
+    public void wakeUp() {
+        this.noJobBackoff = 0;
+        this.idleChecks = 0;
+        if (this.droneState == DroneState.IDLE) {
+            this.droneState = DroneState.FINDING_JOB;
+        }
+    }
+
     private void resetToIdle() {
         releaseCurrentJob();
         this.droneState = DroneState.IDLE;

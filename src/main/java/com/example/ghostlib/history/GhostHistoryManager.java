@@ -212,6 +212,15 @@ public class GhostHistoryManager {
             }
             jobManager.syncToClients(level);
             targetMap.computeIfAbsent(player.getUUID(), k -> new ArrayDeque<>()).push(entry);
+            
+            // Wake up all drones to handle the new state immediately
+            if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                for (net.minecraft.world.entity.Entity entity : serverLevel.getAllEntities()) {
+                    if (entity instanceof com.example.ghostlib.entity.DroneEntity drone) {
+                        drone.wakeUp();
+                    }
+                }
+            }
         } finally {
             isProcessingHistory = false;
         }
