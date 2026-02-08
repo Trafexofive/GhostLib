@@ -88,6 +88,11 @@ public class ClientModEventSubscriber {
                     CompoundTag tag = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA).copyTag();
                     if (tag.contains("Pattern")) {
                         ClientClipboard.setClipboard(tag);
+                        
+                        // Load Tiling Settings
+                        ClientGlobalSelection.tilingSpacingX = tag.contains("TilingSpacingX") ? tag.getInt("TilingSpacingX") : 0;
+                        ClientGlobalSelection.tilingSpacingZ = tag.contains("TilingSpacingZ") ? tag.getInt("TilingSpacingZ") : 0;
+                        
                         ClientGlobalSelection.setMode(ClientGlobalSelection.SelectionMode.PASTE);
                         Minecraft.getInstance().player
                                 .displayClientMessage(Component.literal("Blueprint Loaded. Mode: Paste"), true);
@@ -99,6 +104,8 @@ public class ClientModEventSubscriber {
                 
                 // Fallback: Empty blueprint toggles COPY mode
                 ClientGlobalSelection.setMode(ClientGlobalSelection.SelectionMode.COPY);
+                ClientGlobalSelection.tilingSpacingX = 0; // Reset on new copy
+                ClientGlobalSelection.tilingSpacingZ = 0;
                 Minecraft.getInstance().player
                         .displayClientMessage(Component.literal("Empty Blueprint. Mode: Copy (Select Area)"), true);
                 event.setCancellationResult(net.minecraft.world.InteractionResult.SUCCESS);
@@ -291,6 +298,10 @@ public class ClientModEventSubscriber {
                     clipboardTag.putInt("SizeX", (max.getX() - min.getX()) + 1);
                     clipboardTag.putInt("SizeY", (max.getY() - min.getY()) + 1);
                     clipboardTag.putInt("SizeZ", (max.getZ() - min.getZ()) + 1);
+                    
+                    // Save Tiling Settings (Persist User Preferences)
+                    clipboardTag.putInt("TilingSpacingX", ClientGlobalSelection.tilingSpacingX);
+                    clipboardTag.putInt("TilingSpacingZ", ClientGlobalSelection.tilingSpacingZ);
 
                     ClientClipboard.setClipboard(clipboardTag);
                     
@@ -429,16 +440,29 @@ public class ClientModEventSubscriber {
                     if (ClientGlobalSelection.anchorPos != null) {
                         BoundingBox bounds = renderTiledPreview(mc, player, poseStack, bufferSource, tag, start, end);
                         
-                        // Draw White Outline for the calculated tiled area
+                        // Draw White Outline for the calculated tiled area (Physical Blocks)
                         drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), bounds.min, bounds.max, 1f, 1f, 1f, 0f);
                     } else {
                         // 1. Primary Preview
                         renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                 start, 1, Direction.NORTH, 1.0f, 1.0f, 1.0f);
                         
-                        // Draw White Outline for the single pattern
+                        // Draw White Outline for the single pattern (Physical Blocks)
                         BlockPos patternMax = start.offset(sizeX - 1, sizeY - 1, sizeZ - 1);
                         drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), start, patternMax, 1f, 1f, 1f, 0f);
+
+                        // Draw Cyan "True Tiling" Grid Outline if Spacing is active
+                        if (ClientGlobalSelection.tilingSpacingX != 0 || ClientGlobalSelection.tilingSpacingZ != 0) {
+                            int stepX = sizeX + ClientGlobalSelection.tilingSpacingX;
+                            int stepZ = sizeZ + ClientGlobalSelection.tilingSpacingZ;
+                            // Ensure step is at least 1 to avoid weird rendering, though logic handles overlaps
+                            int gridMaxX = start.getX() + Math.max(1, stepX) - 1;
+                            int gridMaxZ = start.getZ() + Math.max(1, stepZ) - 1;
+                            
+                            BlockPos gridMax = new BlockPos(gridMaxX, start.getY() + sizeY - 1, gridMaxZ);
+                            // Cyan Wireframe
+                            drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), start, gridMax, 0f, 1f, 1f, 0f);
+                        }
 
                         // 2. Smart Tiling Previews
                         if (player.isCrouching()) {
