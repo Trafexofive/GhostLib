@@ -1427,6 +1427,9 @@ public class DroneEntity extends PathfinderMob {
             }
             GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
             this.currentJob = null;
+            // Reset backoff so we immediately look for a new job (e.g. Redo result)
+            this.noJobBackoff = 0;
+            this.idleChecks = 0;
         }
     }
 
