@@ -198,6 +198,9 @@ public class GhostHistoryManager {
                             jobManager.registerDirectDeconstruct(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), targetState, level);
                         } else {
                             // Area is Air or already a ghost marker. Place/Update the marker.
+                            // FORCE CLEAN: Ensure no stale jobs exist before placing the new ghost.
+                            jobManager.removeJob(pos);
+                            
                             level.setBlock(pos, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
                             if (level.getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
                                 gbe.setTargetState(targetState);

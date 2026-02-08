@@ -1420,7 +1420,8 @@ public class DroneEntity extends PathfinderMob {
                     // Only reset if it looks like WE were working on it
                     if (state == GhostBlockEntity.GhostState.FETCHING || 
                         state == GhostBlockEntity.GhostState.INCOMING || 
-                        state == GhostBlockEntity.GhostState.REMOVING) {
+                        state == GhostBlockEntity.GhostState.REMOVING ||
+                        state == GhostBlockEntity.GhostState.ASSIGNED) {
                         gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                     }
                 }
