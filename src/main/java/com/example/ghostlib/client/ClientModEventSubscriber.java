@@ -427,16 +427,10 @@ public class ClientModEventSubscriber {
                     int sizeZ = Math.max(1, tag.getInt("SizeZ"));
 
                     if (ClientGlobalSelection.anchorPos != null) {
-                        renderTiledPreview(mc, player, poseStack, bufferSource, tag, start, end);
+                        BoundingBox bounds = renderTiledPreview(mc, player, poseStack, bufferSource, tag, start, end);
                         
-                        // Draw White Outline for the entire tiled area
-                        int totalMinX = Math.min(start.getX(), end.getX());
-                        int totalMinZ = Math.min(start.getZ(), end.getZ());
-                        int totalMaxX = Math.max(start.getX(), end.getX()) + sizeX - 1;
-                        int totalMaxZ = Math.max(start.getZ(), end.getZ()) + sizeZ - 1;
-                        BlockPos totalMin = new BlockPos(totalMinX, start.getY(), totalMinZ);
-                        BlockPos totalMax = new BlockPos(totalMaxX, start.getY() + sizeY - 1, totalMaxZ);
-                        drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), totalMin, totalMax, 1f, 1f, 1f, 0f);
+                        // Draw White Outline for the calculated tiled area
+                        drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), bounds.min, bounds.max, 1f, 1f, 1f, 0f);
                     } else {
                         // 1. Primary Preview
                         renderPatternPreview(mc, player, poseStack, bufferSource, tag,
@@ -446,22 +440,17 @@ public class ClientModEventSubscriber {
                         BlockPos patternMax = start.offset(sizeX - 1, sizeY - 1, sizeZ - 1);
                         drawBox(poseStack, bufferSource.getBuffer(RenderType.lines()), bufferSource.getBuffer(RenderType.translucent()), start, patternMax, 1f, 1f, 1f, 0f);
 
-                        // 2. Smart Tiling Previews (One in each 4 directions)
-                        // ONLY if crouching
+                        // 2. Smart Tiling Previews
                         if (player.isCrouching()) {
                             int stepX = sizeX + ClientGlobalSelection.tilingSpacingX;
                             int stepZ = sizeZ + ClientGlobalSelection.tilingSpacingZ;
 
-                            // North
                             renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.north(stepZ), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
-                            // South
                             renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.south(stepZ), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
-                            // East
                             renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.east(stepX), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
-                            // West
                             renderPatternPreview(mc, player, poseStack, bufferSource, tag,
                                     start.west(stepX), 1, Direction.NORTH, 0.3f, 0.5f, 1.0f);
                         }
@@ -481,17 +470,17 @@ public class ClientModEventSubscriber {
                     r = 0f;
                     g = 1f;
                     b = 0f;
-                } // Green
+                }
                 if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.CUT) {
                     r = 1f;
                     g = 0.5f;
                     b = 0f;
-                } // Orange
+                }
                 if (ClientGlobalSelection.currentMode == ClientGlobalSelection.SelectionMode.DECONSTRUCT) {
                     r = 1f;
                     g = 0f;
                     b = 0f;
-                } // Red
+                }
 
                 VertexConsumer lines = bufferSource.getBuffer(RenderType.lines());
                 VertexConsumer tint = bufferSource.getBuffer(RenderType.translucent());
@@ -545,7 +534,7 @@ public class ClientModEventSubscriber {
                 String text, int color) {
             Minecraft mc = Minecraft.getInstance();
             if (pos.distToCenterSqr(mc.player.position()) > 400)
-                return; // Distance cull
+                return;
 
             poseStack.pushPose();
             poseStack.translate(pos.getX() + 0.5, pos.getY() + 1.5, pos.getZ() + 0.5);
@@ -582,7 +571,6 @@ public class ClientModEventSubscriber {
 
             for (Map<BlockPos, BlockState> map : jobs.values()) {
                 for (BlockPos pos : map.keySet()) {
-                    // Draw Red wireframe for real blocks marked for deconstruction
                     float s = 0.005f;
                     net.minecraft.client.renderer.LevelRenderer.renderLineBox(poseStack, lineConsumer,
                             pos.getX() - s, pos.getY() - s, pos.getZ() - s,
@@ -621,19 +609,22 @@ public class ClientModEventSubscriber {
         private static void addQuad(Matrix4f matrix, VertexConsumer consumer, float x1, float y1, float z1, float x2,
                 float y2, float z2, float x3, float y3, float z3, float x4, float y4, float z4, float r, float g,
                 float b, float a) {
-            consumer.addVertex(matrix, x1, y1, z1).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1,
-                    0);
-            consumer.addVertex(matrix, x2, y2, z2).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1,
-                    0);
-            consumer.addVertex(matrix, x3, y3, z3).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1,
-                    0);
-            consumer.addVertex(matrix, x4, y4, z4).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1,
-                    0);
+            consumer.addVertex(matrix, x1, y1, z1).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1, 0);
+            consumer.addVertex(matrix, x2, y2, z2).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1, 0);
+            consumer.addVertex(matrix, x3, y3, z3).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1, 0);
+            consumer.addVertex(matrix, x4, y4, z4).setColor(r, g, b, a).setUv(0, 0).setLight(15728880).setNormal(0, 1, 0);
         }
 
-        private static void renderTiledPreview(Minecraft mc, Player player, PoseStack poseStack,
+        private static class BoundingBox {
+            BlockPos min;
+            BlockPos max;
+            BoundingBox(BlockPos min, BlockPos max) { this.min = min; this.max = max; }
+        }
+
+        private static BoundingBox renderTiledPreview(Minecraft mc, Player player, PoseStack poseStack,
                 MultiBufferSource bufferSource, CompoundTag tag, BlockPos start, BlockPos end) {
             int sizeX = Math.max(1, tag.getInt("SizeX"));
+            int sizeY = Math.max(1, tag.getInt("SizeY"));
             int sizeZ = Math.max(1, tag.getInt("SizeZ"));
             
             int stepX = sizeX + ClientGlobalSelection.tilingSpacingX;
@@ -675,9 +666,22 @@ public class ClientModEventSubscriber {
                 }
             }
 
+            int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+            int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+
             for (BlockPos origin : origins) {
                 renderPatternPreview(mc, player, poseStack, bufferSource, tag, origin, 1, Direction.NORTH, 1.0f, 1.0f, 1.0f);
+                
+                minX = Math.min(minX, origin.getX());
+                minY = Math.min(minY, origin.getY());
+                minZ = Math.min(minZ, origin.getZ());
+                
+                maxX = Math.max(maxX, origin.getX() + sizeX - 1);
+                maxY = Math.max(maxY, origin.getY() + sizeY - 1);
+                maxZ = Math.max(maxZ, origin.getZ() + sizeZ - 1);
             }
+            
+            return new BoundingBox(new BlockPos(minX, minY, minZ), new BlockPos(maxX, maxY, maxZ));
         }
 
         private static void renderPatternPreview(Minecraft mc, Player player, PoseStack poseStack,
@@ -707,9 +711,6 @@ public class ClientModEventSubscriber {
                     BlockState existingState = player.level().getBlockState(target);
                     float red, g, b;
                     
-                    // HIGHLIGHT LOGIC:
-                    // If spacing is positive (Gap), use Cyan/Blue
-                    // If spacing is negative (Overlap), use Magenta
                     boolean isOverlapX = ClientGlobalSelection.tilingSpacingX < 0;
                     boolean isOverlapZ = ClientGlobalSelection.tilingSpacingZ < 0;
                     boolean isGapX = ClientGlobalSelection.tilingSpacingX > 0;
