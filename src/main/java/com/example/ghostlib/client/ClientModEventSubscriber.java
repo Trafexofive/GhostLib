@@ -755,10 +755,10 @@ public class ClientModEventSubscriber {
                     poseStack.pushPose();
                     poseStack.translate(target.getX(), target.getY(), target.getZ());
                     blockRenderer.getModelRenderer().renderModel(poseStack.last(),
-                            bufferSource.getBuffer(RenderType.translucent()),
+                            bufferSource.getBuffer(RenderType.cutout()),
                             state, blockRenderer.getBlockModel(state), red * rMult, g, b * bMult, 15728880,
                             net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, ModelData.EMPTY,
-                            RenderType.translucent());
+                            RenderType.cutout());
                     poseStack.popPose();
                 }
             }

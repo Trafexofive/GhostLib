@@ -561,8 +561,17 @@ public class DroneEntity extends PathfinderMob {
             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job no longer exists at "
                     + currentJob.pos() + ", releasing and finding new job");
             this.currentJob = null;
-            this.droneState = DroneState.FINDING_JOB;
+            this.droneState = isInventoryEmpty() ? DroneState.FINDING_JOB : DroneState.DUMPING_ITEMS;
             return;
+        }
+        
+        // CHECK FOR UNDO: Ghost Entity Missing?
+        if (currentJob.type() == GhostJobManager.JobType.CONSTRUCTION && !(level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity)) {
+             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " fetch job invalid (Ghost Missing) at " + currentJob.pos() + ". Aborting.");
+             GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+             this.currentJob = null;
+             this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
+             return;
         }
 
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
@@ -797,8 +806,17 @@ public class DroneEntity extends PathfinderMob {
             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job no longer exists at "
                     + currentJob.pos() + ", releasing and finding new job");
             this.currentJob = null;
-            this.droneState = DroneState.FINDING_JOB;
+            this.droneState = isInventoryEmpty() ? DroneState.FINDING_JOB : DroneState.DUMPING_ITEMS;
             return;
+        }
+
+        // CHECK FOR UNDO: Ghost Entity Missing?
+        if (currentJob.type() == GhostJobManager.JobType.CONSTRUCTION && !(level().getBlockEntity(currentJob.pos()) instanceof GhostBlockEntity)) {
+             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " build job invalid (Ghost Missing) at " + currentJob.pos() + ". Aborting.");
+             GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+             this.currentJob = null;
+             this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
+             return;
         }
 
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
@@ -944,13 +962,9 @@ public class DroneEntity extends PathfinderMob {
     }
 
     private void handleTravelingClear() {
-
         if (currentJob == null) {
-
             resetToIdle();
-
             return;
-
         }
 
         // Verify the job still exists before proceeding
@@ -967,28 +981,29 @@ public class DroneEntity extends PathfinderMob {
         double dist = this.position().distanceTo(currentJob.pos().getCenter());
 
         if (dist < interactRange) {
-
             BlockPos pos = currentJob.pos();
-
             BlockState existing = level().getBlockState(pos);
 
-            BlockState targetAfter = currentJob.targetAfter();
+            // CRITICAL: Never break a GhostBlock itself. 
+            // If we are here and it's a GhostBlock, it means the job is invalid or already done.
+            if (existing.getBlock() instanceof GhostBlock) {
+                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " targeted a GhostBlock at " + pos + " for deconstruction. Aborting.");
+                GhostJobManager.get(level()).completeJob(pos, level()); // Mark complete so we don't loop
+                this.currentJob = null;
+                this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
+                return;
+            }
 
+            BlockState targetAfter = currentJob.targetAfter();
             BlockState finalIntended = currentJob.finalState();
 
             // VISUAL FEEDBACK: Construct/Deconstruct Lasers
-
             if (com.example.ghostlib.config.GhostLibConfig.RENDER_DRONE_BEAMS) {
-
-                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 1.0f, 0.2f, 0.2f); // Red for
-                                                                                                   // Deconstruct
-
+                spawnBeam(this.position().add(0, 0.2, 0), Vec3.atCenterOf(pos), 1.0f, 0.2f, 0.2f); // Red
             }
 
-            // Verify the job still exists and is valid before proceeding
+            // Verify assignment
             if (!GhostJobManager.get(level()).jobExistsAt(pos)) {
-                com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId()
-                        + " deconstruct job was claimed by another drone at " + pos + ", aborting deconstruction");
                 this.currentJob = null;
                 this.droneState = DroneState.FINDING_JOB;
                 return;
@@ -997,55 +1012,32 @@ public class DroneEntity extends PathfinderMob {
             com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " physically breaking "
                     + existing.getBlock().getName().getString() + " at " + pos);
 
-            // PHYSICAL WORK: Harvest and Break (Silent/Instant for performance)
-
+            // PHYSICAL WORK
             harvest(pos, existing);
-
             level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
 
-            // Complete the deconstruction job properly
+            // Complete the deconstruction job
             GhostJobManager.get(level()).completeJob(pos, this.level());
 
             if (targetAfter != null && !targetAfter.isAir()) {
-
                 // Seed marker if necessary
-
                 level().setBlock(pos, targetAfter, 3);
-
                 if (targetAfter.getBlock() instanceof GhostBlock) {
-
                     if (level().getBlockEntity(pos) instanceof GhostBlockEntity gbe) {
-
                         if (finalIntended != null && !finalIntended.isAir()) {
-
                             gbe.setTargetState(finalIntended);
-
                             gbe.setState(GhostBlockEntity.GhostState.UNASSIGNED);
-
-                            com.example.ghostlib.util.GhostLogger
-                                    .drone("Drone " + this.getId() + " seeded Ghost marker for "
-                                            + finalIntended.getBlock().getName().getString() + " at " + pos);
-
                         }
-
                     }
-
                 }
-
             }
 
             double efficiency = this.getAttributeValue(ModAttributes.ENERGY_EFFICIENCY);
-
             this.energy -= (int) (WORK_COST / efficiency);
-
             this.lingerTicks = 10;
-
             this.currentJob = null;
-
             this.droneState = isInventoryEmpty() ? DroneState.IDLE : DroneState.DUMPING_ITEMS;
-
         }
-
     }
 
     private void spawnBeam(Vec3 start, Vec3 end, float r, float g, float b) {
