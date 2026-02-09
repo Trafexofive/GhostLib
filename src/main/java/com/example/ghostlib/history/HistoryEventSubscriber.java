@@ -30,10 +30,12 @@ public class HistoryEventSubscriber {
         BlockState oldState = event.getBlockSnapshot().getState();
         BlockPos pos = event.getPos();
         
-        // Capture old data
+        // Capture old data from level
         net.minecraft.nbt.CompoundTag oldData = null;
-        net.minecraft.world.level.block.entity.BlockEntity be = event.getLevel().getBlockEntity(pos);
-        if (be != null) oldData = be.saveWithFullMetadata(event.getLevel().registryAccess());
+        net.minecraft.world.level.block.entity.BlockEntity oldBe = event.getLevel().getBlockEntity(pos);
+        if (oldBe != null) {
+            oldData = oldBe.saveWithFullMetadata(event.getLevel().registryAccess());
+        }
 
         if (oldState.canBeReplaced()) {
             oldState = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
@@ -41,12 +43,8 @@ public class HistoryEventSubscriber {
         }
 
         BlockState newState = event.getPlacedBlock();
-        
-        // Capture new data (if it exists immediately, rare for placement event but good for consistency)
-        net.minecraft.nbt.CompoundTag newData = null;
-        
         GhostHistoryManager.recordAction(player, Collections.singletonList(
-            new GhostHistoryManager.StateChange(pos.immutable(), oldState, newState, oldData, newData)
+            new GhostHistoryManager.StateChange(pos.immutable(), oldState, newState, oldData, null)
         ));
     }
 
@@ -60,7 +58,7 @@ public class HistoryEventSubscriber {
         BlockState oldState = event.getState();
         BlockPos pos = event.getPos();
         
-        // Capture old data
+        // Capture old data from level before it is gone
         net.minecraft.nbt.CompoundTag oldData = null;
         net.minecraft.world.level.block.entity.BlockEntity be = event.getLevel().getBlockEntity(pos);
         if (be != null) oldData = be.saveWithFullMetadata(event.getLevel().registryAccess());

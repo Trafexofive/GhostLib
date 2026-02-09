@@ -116,8 +116,8 @@ public class GhostActionHandler {
                         level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
                         if (level.getBlockEntity(target) instanceof GhostBlockEntity ghost) {
                             ghost.setTargetState(bpState);
-                            ghost.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                             if (capturedNbt != null) ghost.loadWithComponents(capturedNbt, level.registryAccess());
+                            ghost.setState(GhostBlockEntity.GhostState.UNASSIGNED);
                         }
                     }
                 }
