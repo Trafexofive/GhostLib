@@ -22,6 +22,23 @@ public class DronePortMenu extends ModularUIContainerMenu {
         if (be instanceof IContainerUIHolder holder) {
             return holder;
         }
-        return null;
+        // Fallback to prevent crash, returning a dummy UI holder with matching slot count (9 machine + 36 player)
+        return new IContainerUIHolder() {
+            @Override
+            public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(net.minecraft.world.entity.player.Player player) {
+                com.lowdragmc.lowdraglib2.gui.ui.UI ui = com.lowdragmc.lowdraglib2.gui.ui.UI.empty();
+                // Add 9 dummy slots for the machine
+                for (int i = 0; i < 9; i++) {
+                    ui.getRootElement().addChild(new com.lowdragmc.lowdraglib2.gui.ui.elements.ItemSlot().bind(new net.neoforged.neoforge.items.ItemStackHandler(9), i));
+                }
+                // Add player inventory (36 slots)
+                ui.getRootElement().addChild(new com.lowdragmc.lowdraglib2.gui.ui.elements.inventory.InventorySlots());
+                return com.lowdragmc.lowdraglib2.gui.ui.ModularUI.of(ui, player);
+            }
+            @Override
+            public boolean isStillValid(net.minecraft.world.entity.player.Player player) {
+                return false; // Close as soon as possible
+            }
+        };
     }
 }
