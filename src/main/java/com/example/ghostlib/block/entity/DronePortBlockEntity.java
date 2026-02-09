@@ -49,52 +49,28 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, net
 
     @Override
     public ModularUI createUI(Player player) {
-        com.lowdragmc.lowdraglib2.gui.ui.UI ui = com.lowdragmc.lowdraglib2.gui.ui.UI.empty();
-        ui.getRootElement().layout(l -> {
-            l.width(176f);
-            l.height(166f);
-        });
-        ui.getRootElement().style(s -> s.background(com.lowdragmc.lowdraglib2.gui.ui.styletemplate.MCSprites.RECT));
+        try {
+            ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("ghostlib", "gui/drone_port.xml");
+            org.w3c.dom.Document doc = com.lowdragmc.lowdraglib2.utils.XmlUtils.loadXml(loc);
+            if (doc == null) return ModularUI.of(UI.empty(), player);
+            UI ui = UI.of(doc);
 
-        // Title
-        ui.getRootElement().addChild(new com.lowdragmc.lowdraglib2.gui.ui.elements.Label()
-                .setValue(getDisplayName())
-                .layout(l -> {
-                    l.left(5f);
-                    l.top(5f);
-                }));
+            // Bind 3x3 Grid
+            for (int i = 0; i < 9; i++) {
+                final int index = i;
+                ui.select("slot_" + i, ItemSlot.class).forEach(slot -> slot.bind(inventory, index));
+            }
 
-        // Energy Bar
-        ui.getRootElement().addChild(new ProgressBar()
-                .bindDataSource(GhostGUI.supplier(() -> (float) energyStorage.getEnergyStored() / energyStorage.getMaxEnergyStored()))
-                .layout(l -> {
-                    l.left(10f);
-                    l.top(17f);
-                    l.width(10f);
-                    l.height(54f);
-                }));
+            // Bind Energy Bar
+            ui.select("energy_bar", ProgressBar.class).forEach(bar -> {
+                bar.bindDataSource(GhostGUI.supplier(() -> (float) energyStorage.getEnergyStored() / energyStorage.getMaxEnergyStored()));
+            });
 
-        // 3x3 Drone Grid
-        for (int i = 0; i < 9; i++) {
-            int row = i / 3;
-            int col = i % 3;
-            final int index = i;
-            ui.getRootElement().addChild(new ItemSlot()
-                    .bind(inventory, index)
-                    .layout(l -> {
-                        l.left(62f + col * 18f);
-                        l.top(17f + row * 18f);
-                    }));
+            return ModularUI.of(ui, player);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ModularUI.of(UI.empty(), player);
         }
-
-        // Player Inventory
-        ui.getRootElement().addChild(new com.lowdragmc.lowdraglib2.gui.ui.elements.inventory.InventorySlots()
-                .layout(l -> {
-                    l.bottom(8f);
-                    l.left(8f);
-                }));
-
-        return ModularUI.of(ui, player);
     }
 
     @Override
