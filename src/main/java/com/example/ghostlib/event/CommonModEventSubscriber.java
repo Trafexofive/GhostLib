@@ -51,17 +51,20 @@ public class CommonModEventSubscriber {
         if (!player.getPersistentData().contains(tag)) {
             player.getPersistentData().putBoolean(tag, true);
             
-            player.getInventory().add(new ItemStack(ModItems.DRONE_SPAWN_EGG.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.MATERIAL_STORAGE.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.DRONE_PORT.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.DRONE_SPAWN_EGG.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.MATERIAL_STORAGE.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.DRONE_PORT.get(), 64));
             player.getInventory().add(new ItemStack(ModItems.BLUEPRINT.get(), 16));
             
-            player.getInventory().add(new ItemStack(ModItems.LOGISTICAL_CHEST.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.PASSIVE_PROVIDER_CHEST.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.REQUESTER_CHEST.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.STORAGE_CHEST.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.ACTIVE_PROVIDER_CHEST.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.BUFFER_CHEST.get(), 64));
+            // give player transmutation tablette at login for progression
+            // player.getInventory().add(new ItemStack(
+
+            // player.getInventory().add(new ItemStack(ModItems.LOGISTICAL_CHEST.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.PASSIVE_PROVIDER_CHEST.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.REQUESTER_CHEST.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.STORAGE_CHEST.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.ACTIVE_PROVIDER_CHEST.get(), 64));
+            // player.getInventory().add(new ItemStack(ModItems.BUFFER_CHEST.get(), 64));
 
             player.getInventory().add(createBlueprint("Drone Port Array", createDronePortPattern()));
 
@@ -148,7 +151,27 @@ public class CommonModEventSubscriber {
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent.Post event) {
         Player player = event.getEntity();
-        if (player.level().isClientSide || player.level().getGameTime() % 40 != 0) return;
+        if (player.level().isClientSide) return;
+
+        // Magic Charging: 100 FE every 40 ticks
+        if (player.level().getGameTime() % 40 == 0) {
+            for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+                ItemStack stack = player.getInventory().getItem(i);
+                if (stack.is(ModItems.DRONE_SPAWN_EGG.get())) {
+                    net.minecraft.world.item.component.CustomData data = stack.get(net.minecraft.core.component.DataComponents.ENTITY_DATA);
+                    net.minecraft.nbt.CompoundTag tag = data != null ? data.copyTag() : new net.minecraft.nbt.CompoundTag();
+                    
+                    int energy = tag.getInt("Energy");
+                    // Base max energy is 10000, we could extract from attributes if we wanted to be fancy
+                    if (energy < 10000) {
+                        tag.putInt("Energy", Math.min(energy + 100, 10000));
+                        stack.set(net.minecraft.core.component.DataComponents.ENTITY_DATA, net.minecraft.world.item.component.CustomData.of(tag));
+                    }
+                }
+            }
+        }
+
+        if (player.level().getGameTime() % 40 != 0) return;
 
         ItemStack eggStack = new ItemStack(ModItems.DRONE_SPAWN_EGG.get());
         int eggSlot = player.getInventory().findSlotMatchingItem(eggStack);
@@ -171,8 +194,15 @@ public class CommonModEventSubscriber {
                     .count();
 
                 if (droneCount < 10) {
-                    player.getInventory().getItem(eggSlot).shrink(1);
+                    ItemStack item = player.getInventory().getItem(eggSlot);
                     DroneEntity drone = new DroneEntity(ModEntities.DRONE.get(), player.level());
+                    
+                    net.minecraft.world.item.component.CustomData customData = item.get(net.minecraft.core.component.DataComponents.ENTITY_DATA);
+                    if (customData != null) {
+                        customData.loadInto(drone);
+                    }
+
+                    item.shrink(1);
                     drone.setPos(player.getX(), player.getY() + 2.0, player.getZ());
                     drone.setOwner(player);
                     player.level().addFreshEntity(drone);

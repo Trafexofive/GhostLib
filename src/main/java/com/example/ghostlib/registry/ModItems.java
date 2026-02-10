@@ -15,7 +15,7 @@ public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(GhostLib.MODID);
 
     public static final DeferredItem<Item> DRONE_SPAWN_EGG = ITEMS.register("drone_spawn_egg",
-            () -> new DeferredSpawnEggItem(ModEntities.DRONE, 0x000000, 0x00FFFF, new Item.Properties()));
+            () -> new com.example.ghostlib.item.DroneItem(ModEntities.DRONE, 0x000000, 0x00FFFF, new Item.Properties()));
 
     public static final DeferredItem<Item> MATERIAL_STORAGE = ITEMS.register("material_storage",
             () -> new BlockItem(ModBlocks.MATERIAL_STORAGE.get(), new Item.Properties()));

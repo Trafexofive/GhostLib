@@ -123,9 +123,16 @@ public class SwarmHandler {
 
     private static boolean spawnDroneFromSlot(Player player, int slot, GhostJobManager.Job job) {
         ItemStack stack = player.getInventory().getItem(slot);
-        stack.shrink(1);
 
         DroneEntity drone = new DroneEntity(ModEntities.DRONE.get(), player.level());
+        
+        // Load data from item before shrinking
+        net.minecraft.world.item.component.CustomData customData = stack.get(net.minecraft.core.component.DataComponents.ENTITY_DATA);
+        if (customData != null) {
+            customData.loadInto(drone);
+        }
+
+        stack.shrink(1);
         drone.setPos(player.getX(), player.getY() + 1.5, player.getZ());
         drone.setOwner(player);
         

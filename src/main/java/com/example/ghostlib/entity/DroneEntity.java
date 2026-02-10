@@ -3,6 +3,7 @@ package com.example.ghostlib.entity;
 import com.example.ghostlib.registry.ModAttributes;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.world.item.component.CustomData;
 
 import com.example.ghostlib.GhostLib;
@@ -26,7 +27,6 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -133,6 +133,68 @@ public class DroneEntity extends PathfinderMob {
         builder.define(DATA_OWNER_UUID, Optional.empty());
     }
 
+    @Override
+    public void addAdditionalSaveData(CompoundTag compound) {
+        super.addAdditionalSaveData(compound);
+        compound.putByte("DroneMode", this.entityData.get(DATA_MODE));
+        if (getOwnerUUID() != null) {
+            compound.putUUID("Owner", getOwnerUUID());
+        }
+        if (getPortPos().isPresent()) {
+            compound.putLong("PortPos", getPortPos().get().asLong());
+        }
+        compound.putInt("Energy", this.energy);
+        if (this.networkId != null) {
+            compound.putInt("NetworkId", this.networkId);
+        }
+        
+        ListTag inventoryList = new ListTag();
+        for (int i = 0; i < this.inventory.getContainerSize(); i++) {
+            ItemStack stack = this.inventory.getItem(i);
+            if (!stack.isEmpty()) {
+                CompoundTag itemTag = new CompoundTag();
+                itemTag.putByte("Slot", (byte) i);
+                itemTag.put("Item", stack.save(this.level().registryAccess()));
+                inventoryList.add(itemTag);
+            }
+        }
+        compound.put("Inventory", inventoryList);
+    }
+
+    @Override
+    public void readAdditionalSaveData(CompoundTag compound) {
+        super.readAdditionalSaveData(compound);
+        if (compound.contains("DroneMode")) {
+            this.entityData.set(DATA_MODE, compound.getByte("DroneMode"));
+        }
+        if (compound.hasUUID("Owner")) {
+            this.setOwnerUUID(compound.getUUID("Owner"));
+        }
+        if (compound.contains("PortPos")) {
+            this.entityData.set(DATA_PORT_POS, Optional.of(BlockPos.of(compound.getLong("PortPos"))));
+        }
+        if (compound.contains("Energy")) {
+            this.energy = compound.getInt("Energy");
+        }
+        if (compound.contains("NetworkId")) {
+            this.networkId = compound.getInt("NetworkId");
+        }
+
+        if (compound.contains("Inventory")) {
+            ListTag inventoryList = compound.getList("Inventory", 10); // 10 = CompoundTag
+            for (int i = 0; i < inventoryList.size(); i++) {
+                CompoundTag itemTag = inventoryList.getCompound(i);
+                int slot = itemTag.getByte("Slot") & 255;
+                if (slot >= 0 && slot < this.inventory.getContainerSize()) {
+                    if (itemTag.contains("Item")) {
+                        Optional<ItemStack> stack = ItemStack.parse(this.level().registryAccess(), itemTag.getCompound("Item"));
+                        stack.ifPresent(itemStack -> this.inventory.setItem(slot, itemStack));
+                    }
+                }
+            }
+        }
+    }
+
     public void setOwner(Player player) {
         this.entityData.set(DATA_MODE, DroneMode.PLAYER.id);
         this.entityData.set(DATA_OWNER_UUID, Optional.of(player.getUUID()));
@@ -156,7 +218,7 @@ public class DroneEntity extends PathfinderMob {
     public static AttributeSupplier.Builder createAttributes() {
         return PathfinderMob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, com.example.ghostlib.config.GhostLibConfig.DRONE_MAX_HEALTH)
-                .add(Attributes.MOVEMENT_SPEED, 3.0D) // Optimized speed
+                .add(Attributes.MOVEMENT_SPEED, 0.5D) // Fast but stable speed
                 .add(ModAttributes.INTERACTION_RANGE)
                 .add(ModAttributes.SEARCH_RANGE)
                 .add(ModAttributes.WORK_SPEED)
@@ -360,6 +422,7 @@ public class DroneEntity extends PathfinderMob {
                             if (idleTicks > 100 && isInventoryEmpty()) {
                                 ItemStack self = new ItemStack(
                                         com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get());
+                                this.saveToItem(self);
                                 if (dp.insertItem(self, true).isEmpty()) {
                                     dp.insertItem(self, false);
                                     this.discard();
@@ -377,6 +440,17 @@ public class DroneEntity extends PathfinderMob {
         } else {
             this.droneState = DroneState.IDLE;
         }
+    }
+
+    public void saveToItem(ItemStack stack) {
+        CompoundTag tag = new CompoundTag();
+        this.saveWithoutId(tag);
+        // Clean up some things we might not want to persist in item form
+        tag.remove("Pos");
+        tag.remove("Motion");
+        tag.remove("Rotation");
+        tag.remove("UUID");
+        stack.set(DataComponents.ENTITY_DATA, CustomData.of(tag));
     }
 
     private BlockPos findNearestNetworkPort() {
@@ -397,8 +471,12 @@ public class DroneEntity extends PathfinderMob {
     }
 
     private void handleIdle() {
-        if (energy < getAttributeValue(ModAttributes.MAX_ENERGY) * 0.2 && getMode() == DroneMode.PORT) {
-            this.droneState = DroneState.CHARGING;
+        if (energy < getAttributeValue(ModAttributes.MAX_ENERGY) * 0.2) {
+            if (getMode() == DroneMode.PORT) {
+                this.droneState = DroneState.CHARGING;
+            } else if (getMode() == DroneMode.PLAYER) {
+                this.droneState = DroneState.RETURNING_TO_OWNER;
+            }
             return;
         }
 
@@ -488,7 +566,7 @@ public class DroneEntity extends PathfinderMob {
 
         if (this.distanceToSqr(owner) < 9.0D) { // 3 blocks
             ItemStack droneItem = new ItemStack(ModItems.DRONE_SPAWN_EGG.get());
-            // Save energy to item if desired? No, fresh start.
+            this.saveToItem(droneItem);
 
             if (owner.getInventory().add(droneItem)) {
                 this.discard();
@@ -506,6 +584,16 @@ public class DroneEntity extends PathfinderMob {
 
     private void handleFindingJob() {
         if (currentJob != null) return;
+
+        // Low energy check
+        if (energy < getAttributeValue(ModAttributes.MAX_ENERGY) * 0.2) {
+            if (getMode() == DroneMode.PORT) {
+                this.droneState = DroneState.CHARGING;
+            } else if (getMode() == DroneMode.PLAYER) {
+                this.droneState = DroneState.RETURNING_TO_OWNER;
+            }
+            return;
+        }
 
         // Drones can always build if they have energy. Space is only strictly required for deconstruction,
         // but we'll let the job manager filter based on the canBuild flag which should be true if we want to build.
@@ -691,7 +779,7 @@ public class DroneEntity extends PathfinderMob {
     private BlockPos findNearbyContainerWithItem(ItemStack stack) {
         BlockPos center = this.blockPosition();
 
-        // 1. Network Search (Prioritized by Factorio rules)
+        // 1. Network Search (Prioritized by Factorio rules) - O(N containers)
         if (networkId != null) {
             Set<BlockPos> members = LogisticsNetworkManager.get(level()).getNetworkMembers(networkId);
             BlockPos bestProvider = null;
@@ -732,10 +820,11 @@ public class DroneEntity extends PathfinderMob {
                 return bestGeneric;
         }
 
-        // 2. Local Search (Fallback or Player Mode)
-        int searchRange = (int) this.getAttributeValue(ModAttributes.SEARCH_RANGE);
-        int rh = searchRange / 2;
-        int rv = searchRange / 4;
+        // 2. Local Search (Fallback or Player Mode) - O(Radius^3) -> RESTRICTED
+        // WARNING: Using full SEARCH_RANGE here causes massive lag (scanning 100k+ blocks).
+        // Restricting to small local radius (8 blocks) for emergency pickup.
+        int rh = 8; 
+        int rv = 4;
 
         BlockPos bestProvider = null;
         BlockPos bestGeneric = null;

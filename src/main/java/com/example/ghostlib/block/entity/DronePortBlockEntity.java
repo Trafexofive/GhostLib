@@ -50,16 +50,10 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, net
     @Override
     public ModularUI createUI(Player player) {
         try {
-            ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("ghostlib", "gui/drone_port.xml");
-            org.w3c.dom.Document doc = com.lowdragmc.lowdraglib2.utils.XmlUtils.loadXml(loc);
-            if (doc == null) return ModularUI.of(UI.empty(), player);
-            UI ui = UI.of(doc);
-
-            // Bind 3x3 Grid
-            for (int i = 0; i < 9; i++) {
-                final int index = i;
-                ui.select("slot_" + i, ItemSlot.class).forEach(slot -> slot.bind(inventory, index));
-            }
+            com.lowdragmc.lowdraglib2.gui.ui.UITemplate template = com.lowdragmc.lowdraglib2.editor.resource.UIResource.INSTANCE.getResourceInstance()
+                    .getResource(new com.lowdragmc.lowdraglib2.editor.resource.FilePath(ResourceLocation.fromNamespaceAndPath("ldlib2", "resources/global/port.ui.nbt")));
+            
+            com.lowdragmc.lowdraglib2.gui.ui.UI ui = template != null ? template.createUI() : com.lowdragmc.lowdraglib2.gui.ui.UI.empty();
 
             // Bind Energy Bar
             ui.select("energy_bar", ProgressBar.class).forEach(bar -> {
@@ -69,7 +63,7 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, net
             return ModularUI.of(ui, player);
         } catch (Exception e) {
             e.printStackTrace();
-            return ModularUI.of(UI.empty(), player);
+            return ModularUI.of(com.lowdragmc.lowdraglib2.gui.ui.UI.empty(), player);
         }
     }
 
@@ -167,6 +161,13 @@ public class DronePortBlockEntity extends BlockEntity implements IDronePort, net
             ItemStack stack = inventory.getStackInSlot(i);
             if (stack.getItem() == com.example.ghostlib.registry.ModItems.DRONE_SPAWN_EGG.get()) {
                 DroneEntity drone = new DroneEntity(ModEntities.DRONE.get(), level);
+                
+                // Load data from item before shrinking
+                net.minecraft.world.item.component.CustomData customData = stack.get(net.minecraft.core.component.DataComponents.ENTITY_DATA);
+                if (customData != null) {
+                    customData.loadInto(drone);
+                }
+
                 drone.setPos(worldPosition.getX() + 0.5, worldPosition.getY() + 1.0, worldPosition.getZ() + 0.5);
                 drone.setPort(worldPosition);
                 
