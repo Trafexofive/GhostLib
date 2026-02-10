@@ -22,6 +22,22 @@ public class LogisticalChestMenu extends ModularUIContainerMenu {
         if (be instanceof IContainerUIHolder holder) {
             return holder;
         }
-        return null;
+        // Fallback to prevent crash, returning a dummy UI holder with matching slot count (27 machine)
+        return new IContainerUIHolder() {
+            @Override
+            public com.lowdragmc.lowdraglib2.gui.ui.ModularUI createUI(net.minecraft.world.entity.player.Player player) {
+                com.lowdragmc.lowdraglib2.gui.ui.UI ui = com.lowdragmc.lowdraglib2.gui.ui.UI.empty();
+                // Add 27 dummy slots for the machine
+                for (int i = 0; i < 27; i++) {
+                    ui.getRootElement().addChild(new com.lowdragmc.lowdraglib2.gui.ui.elements.ItemSlot().bind(new net.neoforged.neoforge.items.ItemStackHandler(27), i));
+                }
+                // DO NOT add player inventory (36 slots) here - ModularUIContainerMenu will add them automatically
+                return com.lowdragmc.lowdraglib2.gui.ui.ModularUI.of(ui, player);
+            }
+            @Override
+            public boolean isStillValid(net.minecraft.world.entity.player.Player player) {
+                return false;
+            }
+        };
     }
 }

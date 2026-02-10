@@ -20,7 +20,7 @@ public class GhostBlock extends BaseEntityBlock {
     @Override
     public void onRemove(BlockState state, net.minecraft.world.level.Level level, BlockPos pos, BlockState newState, boolean isMoving) {
         if (!state.is(newState.getBlock())) {
-            if (!level.isClientSide) {
+            if (!level.isClientSide && !com.example.ghostlib.history.GhostHistoryManager.isProcessingHistory) {
                 com.example.ghostlib.util.GhostJobManager.get(level).removeJob(pos);
             }
         }

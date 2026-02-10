@@ -8,6 +8,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.ItemSlot;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.Label;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -38,14 +39,12 @@ public class LogisticalChestBlockEntity extends BlockEntity implements net.minec
     @Override
     public ModularUI createUI(Player player) {
         try {
-            ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("ghostlib", "gui/logistical_chest.xml");
-            org.w3c.dom.Document doc = com.lowdragmc.lowdraglib2.utils.XmlUtils.loadXml(loc);
-            if (doc == null) return ModularUI.of(UI.empty(), player);
-            UI ui = UI.of(doc);
+            com.lowdragmc.lowdraglib2.gui.ui.UITemplate template = com.lowdragmc.lowdraglib2.editor.resource.UIResource.INSTANCE.getResourceInstance()
+                    .getResource(new com.lowdragmc.lowdraglib2.editor.resource.FilePath(ResourceLocation.fromNamespaceAndPath("ldlib2", "resources/global/ogisticchest.ui.nbt")));
+            
+            com.lowdragmc.lowdraglib2.gui.ui.UI ui = template != null ? template.createUI() : com.lowdragmc.lowdraglib2.gui.ui.UI.empty();
 
-            ui.select("title", Label.class).forEach(l -> l.setValue(getDisplayName()));
-
-            // Bind 3x9 Grid
+            // Bind 27 slots
             for (int i = 0; i < 27; i++) {
                 final int index = i;
                 ui.select("slot_" + i, ItemSlot.class).forEach(slot -> slot.bind(inventory, index));
@@ -54,7 +53,7 @@ public class LogisticalChestBlockEntity extends BlockEntity implements net.minec
             return ModularUI.of(ui, player);
         } catch (Exception e) {
             e.printStackTrace();
-            return ModularUI.of(UI.empty(), player);
+            return ModularUI.of(com.lowdragmc.lowdraglib2.gui.ui.UI.empty(), player);
         }
     }
 

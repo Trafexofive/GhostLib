@@ -293,7 +293,7 @@ public class GhostJobManager {
         return current != null && current.equals(droneId);
     }
 
-    public void reassignJob(BlockPos pos, UUID oldId, UUID newId) {
+    public synchronized void reassignJob(BlockPos pos, UUID oldId, UUID newId) {
         UUID current = assignedPositions.get(pos);
         if (current != null && current.equals(oldId)) {
             assignedPositions.put(pos, newId);
@@ -316,20 +316,38 @@ public class GhostJobManager {
     public Job requestJob(BlockPos dronePos, UUID droneId, boolean canBuild) {
         int cx = SectionPos.blockToSectionCoord(dronePos.getX());
         int cz = SectionPos.blockToSectionCoord(dronePos.getZ());
-        // Optimized range: 8 sections (128 blocks) is plenty for technical mods
-        for (int r = 0; r <= 8; r++) {
-            Job job = searchRing(cx, cz, r, dronePos, droneId, canBuild);
-            if (job != null) return job;
-        }
-        return null;
-    }
+        int range = 8; // Chunk radius
 
-    private Job searchRing(int cx, int cz, int r, BlockPos dronePos, UUID droneId, boolean canBuild) {
-        for (int x = cx - r; x <= cx + r; x++) {
-            for (int z = cz - r; z <= cz + r; z++) {
-                if (r > 0 && Math.abs(x - cx) < r && Math.abs(z - cz) < r) continue;
-                long key = ChunkPos.asLong(x, z);
-                
+        // Optimization: Instead of scanning 289 chunk coordinates (most of which are empty),
+        // we collect the set of chunks that actually HAVE jobs and filter them by distance.
+        Set<Long> candidateChunks = new HashSet<>();
+        candidateChunks.addAll(directDeconstructJobs.keySet());
+        candidateChunks.addAll(ghostRemovalJobs.keySet());
+        if (canBuild) {
+            candidateChunks.addAll(constructionJobs.keySet());
+        }
+
+        if (candidateChunks.isEmpty()) return null;
+
+        // Sort candidates by distance to drone (nearest first) to ensure efficient behavior
+        List<Long> sortedCandidates = candidateChunks.stream()
+            .filter(key -> {
+                int kx = ChunkPos.getX(key);
+                int kz = ChunkPos.getZ(key);
+                return Math.abs(kx - cx) <= range && Math.abs(kz - cz) <= range;
+            })
+            .sorted(Comparator.comparingDouble(key -> {
+                int kx = ChunkPos.getX(key);
+                int kz = ChunkPos.getZ(key);
+                double dx = kx - cx;
+                double dz = kz - cz;
+                return dx * dx + dz * dz;
+            }))
+            .toList();
+
+        // Search through sorted, valid chunks
+        for (Long key : sortedCandidates) {
+            synchronized (assignedPositions) {
                 // Prioritize Deconstruction/Removal over Construction
                 Job j = findInMap(directDeconstructJobs.get(key), dronePos, droneId, JobType.DIRECT_DECONSTRUCT);
                 if (j != null) return j;
@@ -345,6 +363,8 @@ public class GhostJobManager {
         }
         return null;
     }
+
+    // private Job searchRing(int cx, int cz, int r, BlockPos dronePos, UUID droneId, boolean canBuild) { ... } // Removed as obsolete
 
     private Job findInMap(Map<BlockPos, BlockState> map, BlockPos dronePos, UUID droneId, JobType type) {
         if (map == null || map.isEmpty()) return null;

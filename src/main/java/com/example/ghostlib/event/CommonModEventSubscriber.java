@@ -161,8 +161,13 @@ public class CommonModEventSubscriber {
                     net.minecraft.world.item.component.CustomData data = stack.get(net.minecraft.core.component.DataComponents.ENTITY_DATA);
                     net.minecraft.nbt.CompoundTag tag = data != null ? data.copyTag() : new net.minecraft.nbt.CompoundTag();
                     
+                    // Ensure ID is present if we are adding data to a fresh egg
+                    if (!tag.contains("id")) {
+                        tag.putString("id", ModEntities.DRONE.getId().toString());
+                    }
+
                     int energy = tag.getInt("Energy");
-                    // Base max energy is 10000, we could extract from attributes if we wanted to be fancy
+                    // Base max energy is 10000
                     if (energy < 10000) {
                         tag.putInt("Energy", Math.min(energy + 100, 10000));
                         stack.set(net.minecraft.core.component.DataComponents.ENTITY_DATA, net.minecraft.world.item.component.CustomData.of(tag));

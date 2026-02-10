@@ -1,15 +1,14 @@
 # Technical Architecture: GhostLib
 
-## 1. Drone AI & Swarm Management
-Drones utilize a custom Finite State Machine (FSM) for high-precision physical interaction.
+## 1. World Management: The Command Ledger
+GhostLib has transitioned from a simple job-queue model to a **Command Ledger Architecture**. Every world interaction is recorded in a persistent, versioned coordinate stack.
 
-### Swarm Varieties
-*   **Player Drones:** Primary focus is player support. They use `Player` inventory as their source/sink.
-*   **Port Drones:** Autonomous factory workers. They use a **Home Position** (Drone Port) and search for nearby containers (`IItemHandler`) to fulfill construction needs.
+*   **WorldHistoryManager:** Stores the absolute intent of the world.
+*   **WorldReconciler:** A high-performance engine that compares intent vs reality and dispatches the swarm.
+*   **Deterministic Undo/Redo:** By popping/pushing state stacks per coordinate, the system can revert any sequence of actions back to the spawn state.
 
-### Smooth Movement
-*   **Approach Damping:** Scaled deceleration within 2.0 blocks of target to ensure exact landings.
-*   **Home Return:** Port drones monitor their "Idle Ticks". After 30 seconds of inactivity, they automatically return to their home port and dock as items.
+## 2. Drone AI & Swarm Management
+Drones utilize a custom Finite State Machine (FSM) for high-precision physical interaction. Drones are now **Intent-Aware**, meaning they abort tasks if the ledger changes mid-flight.
 
 ## 2. Multiblock Systems
 GhostLib implements a lightweight Multiblock API for industrial machines.

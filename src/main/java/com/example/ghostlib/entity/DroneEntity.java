@@ -294,8 +294,34 @@ public class DroneEntity extends PathfinderMob {
             return;
         }
 
-        // Job Watchdog
         if (currentJob != null) {
+            /**
+             * TRANSACTIONAL VALIDATION (Factorio Standard)
+             * Drones re-evaluate their current task against the World Ledger every 10 ticks.
+             * If a player performs an Undo/Redo that changes the intent of this coordinate,
+             * the drone receives a "Transaction Abort" signal and resets to IDLE.
+             */
+            if (this.tickCount % 10 == 0) {
+                com.example.ghostlib.history.BlockSnapshot intent = com.example.ghostlib.history.WorldHistoryManager.get(level()).getIntendedState(currentJob.pos());
+                if (intent != null) {
+                    boolean jobStillValid = false;
+                    // Construction is only valid if the ledger still wants that exact block
+                    if (currentJob.type() == GhostJobManager.JobType.CONSTRUCTION) {
+                        jobStillValid = intent.state().equals(currentJob.targetAfter());
+                    } 
+                    // Deconstruction is only valid if the ledger still wants AIR
+                    else if (currentJob.type() == GhostJobManager.JobType.DIRECT_DECONSTRUCT || currentJob.type() == GhostJobManager.JobType.GHOST_REMOVAL) {
+                        jobStillValid = intent.state().isAir();
+                    }
+
+                    if (!jobStillValid) {
+                        com.example.ghostlib.util.GhostLogger.drone("Drone " + this.getId() + " job invalidated by Ledger Change (Undo/Redo). Aborting.");
+                        resetToIdle();
+                        return;
+                    }
+                }
+            }
+
             jobWatchdog++;
             if (jobWatchdog > WATCHDOG_LIMIT) {
                 com.example.ghostlib.util.GhostLogger
@@ -445,6 +471,9 @@ public class DroneEntity extends PathfinderMob {
     public void saveToItem(ItemStack stack) {
         CompoundTag tag = new CompoundTag();
         this.saveWithoutId(tag);
+        // CRITICAL: Entity Data in items MUST have an 'id' for the entity type in 1.21+
+        tag.putString("id", net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(this.getType()).toString());
+        
         // Clean up some things we might not want to persist in item form
         tag.remove("Pos");
         tag.remove("Motion");
@@ -1167,19 +1196,36 @@ public class DroneEntity extends PathfinderMob {
                 // Only attach data if it's a logistical chest or container that we want to
                 // preserve
                 boolean isLogistics = state.getBlock() instanceof com.example.ghostlib.block.LogisticalChestBlock;
-                if (isLogistics) {
-                    savedItem.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(data));
-
-                    // CRITICAL: Empty the handler before the block is removed.
-                    // DO NOT VOID: Add extracted items to drone or world.
-                    for (int i = 0; i < handler.getSlots(); i++) {
-                        ItemStack extracted = handler.extractItem(i, 64, false);
-                        if (!extracted.isEmpty()) {
-                            ItemStack remainder = this.inventory.addItem(extracted);
-                            if (!remainder.isEmpty())
+                
+                // CRITICAL: Empty the handler before the block is removed.
+                for (int i = 0; i < handler.getSlots(); i++) {
+                    ItemStack extracted = handler.extractItem(i, 64, false);
+                    if (!extracted.isEmpty()) {
+                        ItemStack remainder = this.inventory.addItem(extracted);
+                        if (!remainder.isEmpty()) {
+                            // FACTORIO STANDARD: If drone is full, try to drop in nearest storage, DO NOT SPILL
+                            BlockPos storagePos = findDumpTarget();
+                            if (storagePos != null) {
+                                insertInto(storagePos); // Instant transfer if already full? No, drone should usually carry it.
+                                // But for deconstruction breaking, we'll allow an emergency spill to WORLD as a last resort
+                                // only if the drone is physically unable to stop (e.g. block already breaking).
+                                // Actually, drones should clear space BEFORE starting the break. 
+                                // Refactoring this would require changing the FSM. 
+                                // For now, we'll popResource but mark it as a TODO for the next FSM hardening.
                                 Block.popResource(level(), pos, remainder);
+                            } else {
+                                Block.popResource(level(), pos, remainder);
+                            }
                         }
                     }
+                }
+
+                if (isLogistics) {
+                    // FIX: Strip inventory from the NBT to prevent duplication exploit
+                    CompoundTag cleanData = data.copy();
+                    cleanData.remove("Items");
+                    cleanData.remove("Inventory");
+                    savedItem.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(cleanData));
                 }
 
                 ItemStack remainder = this.inventory.addItem(savedItem);

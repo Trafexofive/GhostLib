@@ -152,6 +152,11 @@ public class ClientClipboard {
 
         history.set(currentIndex, newTag);
         save();
+
+        // SYNC: Tell server about the rotation
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().getConnection().send(new com.example.ghostlib.network.payload.ServerboundUpdateBlueprintPacket(newTag));
+        }
     }
 
     public static void flip() {
@@ -193,5 +198,10 @@ public class ClientClipboard {
 
         history.set(currentIndex, newTag);
         save();
+
+        // SYNC: Tell server about the flip
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().getConnection().send(new com.example.ghostlib.network.payload.ServerboundUpdateBlueprintPacket(newTag));
+        }
     }
 }

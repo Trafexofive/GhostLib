@@ -22,6 +22,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
@@ -56,15 +57,10 @@ public class AssemblerTestItem extends Item implements MenuProvider, IContainerU
     @Override
     public ModularUI createUI(Player player) {
         try {
-            net.minecraft.resources.ResourceLocation loc = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("ghostlib", "gui/assembler_test.xml");
-            System.out.println("AssemblerTestItem: Loading XML from " + loc);
-            org.w3c.dom.Document doc = com.lowdragmc.lowdraglib2.utils.XmlUtils.loadXml(loc);
-            if (doc == null) {
-                System.out.println("AssemblerTestItem: Document is NULL");
-                return ModularUI.of(UI.empty(), player);
-            }
-            UI ui = UI.of(doc);
-            System.out.println("AssemblerTestItem: UI Loaded");
+            com.lowdragmc.lowdraglib2.gui.ui.UITemplate template = com.lowdragmc.lowdraglib2.editor.resource.UIResource.INSTANCE.getResourceInstance()
+                    .getResource(new com.lowdragmc.lowdraglib2.editor.resource.FilePath(ResourceLocation.fromNamespaceAndPath("ldlib2", "resources/global/assembler.ui.nbt")));
+            
+            com.lowdragmc.lowdraglib2.gui.ui.UI ui = template != null ? template.createUI() : com.lowdragmc.lowdraglib2.gui.ui.UI.empty();
 
             // Access NBT Helpers
             Supplier<CompoundTag> getTag = () -> {
@@ -114,7 +110,7 @@ public class AssemblerTestItem extends Item implements MenuProvider, IContainerU
             return ModularUI.of(ui, player);
         } catch (Exception e) {
             e.printStackTrace();
-            return ModularUI.of(UI.empty(), player);
+            return ModularUI.of(com.lowdragmc.lowdraglib2.gui.ui.UI.empty(), player);
         }
     }
 

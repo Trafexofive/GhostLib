@@ -22,8 +22,9 @@ public class LevelTickHandler {
      */
     @SubscribeEvent
     public static void onLevelTick(LevelTickEvent.Post event) {
-        if (event.getLevel() instanceof Level level) {
-            GhostJobManager.get(level).tick(level);
+        if (event.getLevel() instanceof Level level && !level.isClientSide) {
+            com.example.ghostlib.util.GhostJobManager.get(level).tick(level);
+            com.example.ghostlib.history.WorldReconciler.get(level).tick((net.minecraft.server.level.ServerLevel)level);
         }
     }
 
@@ -36,12 +37,17 @@ public class LevelTickHandler {
         if (event.getLevel().isClientSide())
             return;
 
-        ChunkPos chunkPos = event.getChunk().getPos();
+        long chunkKey = event.getChunk().getPos().toLong();
         GhostJobManager manager = GhostJobManager.get((Level) event.getLevel());
 
-        // Only release assignments, don't delete the jobs!
-        manager.releaseAssignmentsInChunk(chunkPos.toLong());
+        // CRITICAL: Clean up volatile job maps to prevent memory leak.
+        // Persistence is handled separately by GhostJobSavedData.
+        manager.getConstructionJobsMap().remove(chunkKey);
+        manager.getGhostRemovalJobsMap().remove(chunkKey);
+        manager.getDirectDeconstructJobs().remove(chunkKey);
+        manager.getHibernatingJobsMap().remove(chunkKey);
+        manager.releaseAssignmentsInChunk(chunkKey);
 
-        GhostLib.LOGGER.debug("Released drone assignments in chunk {} during unload", chunkPos);
+        GhostLib.LOGGER.debug("Cleaned up jobs and assignments in chunk {} during unload", event.getChunk().getPos());
     }
 }

@@ -2,7 +2,9 @@ package com.example.ghostlib.logic;
 
 import com.example.ghostlib.block.GhostBlock;
 import com.example.ghostlib.block.entity.GhostBlockEntity;
+import com.example.ghostlib.history.BlockSnapshot;
 import com.example.ghostlib.history.GhostHistoryManager;
+import com.example.ghostlib.history.WorldHistoryManager;
 import com.example.ghostlib.registry.ModBlocks;
 import com.example.ghostlib.util.GhostJobManager;
 import net.minecraft.core.BlockPos;
@@ -15,7 +17,9 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class GhostActionHandler {
 
@@ -29,7 +33,6 @@ public class GhostActionHandler {
             return;
 
         ListTag patternList = patternTag.getList("Pattern", 10);
-        List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
         List<BlockPos> placementOrigins = new ArrayList<>();
 
         int bpSizeX = patternTag.contains("SizeX") ? Math.max(1, patternTag.getInt("SizeX")) : 0;
@@ -86,63 +89,31 @@ public class GhostActionHandler {
             }
         }
 
+        Map<BlockPos, BlockSnapshot> blueprintChanges = new HashMap<>();
         for (BlockPos origin : placementOrigins) {
             for (int i = 0; i < patternList.size(); i++) {
                 CompoundTag blockTag = patternList.getCompound(i);
                 BlockPos rel = NbtUtils.readBlockPos(blockTag, "Rel").orElse(BlockPos.ZERO);
                 BlockState bpState = NbtUtils.readBlockState(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), blockTag.getCompound("State"));
-                BlockPos target = origin.offset(rel);
-                BlockState worldState = level.getBlockState(target);
+                BlockPos target = origin.offset(rel).immutable();
+                CompoundTag capturedNbt = blockTag.contains("Data") ? blockTag.getCompound("Data") : null;
 
-                if (bpState != null && !bpState.isAir() && !worldState.equals(bpState)) {
-                    CompoundTag capturedNbt = blockTag.contains("Data") ? blockTag.getCompound("Data") : null;
-
-                    if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
-                        if (isForce) {
-                            CompoundTag oldData = null;
-                            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(target);
-                            if (be != null) oldData = be.saveWithFullMetadata(level.registryAccess());
-                            
-                            changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState, oldData, capturedNbt));
-                            GhostJobManager.get(level).registerDirectDeconstruct(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), bpState, level);
-                        }
-                    } else {
-                        CompoundTag oldData = null;
-                        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(target);
-                        if (be != null) oldData = be.saveWithFullMetadata(level.registryAccess());
-
-                        changes.add(new GhostHistoryManager.StateChange(target.immutable(), worldState, bpState, oldData, capturedNbt));
-
-                        level.setBlock(target, ModBlocks.GHOST_BLOCK.get().defaultBlockState(), 3);
-                        if (level.getBlockEntity(target) instanceof GhostBlockEntity ghost) {
-                            ghost.setTargetState(bpState);
-                            if (capturedNbt != null) ghost.loadWithComponents(capturedNbt, level.registryAccess());
-                            ghost.setState(GhostBlockEntity.GhostState.UNASSIGNED);
-                        }
-                    }
+                if (bpState != null && !bpState.isAir()) {
+                    blueprintChanges.put(target, new BlockSnapshot(bpState, capturedNbt));
                 }
             }
         }
-        GhostHistoryManager.recordAction(player, changes);
+        WorldHistoryManager.get(level).pushAction(new WorldHistoryManager.HistoryAction("Blueprint Placement", blueprintChanges), level);
     }
 
     public static void executeDeconstruction(ServerLevel level, ServerPlayer player, BlockPos start, BlockPos end) {
         BlockPos min = new BlockPos(Math.min(start.getX(), end.getX()), Math.min(start.getY(), end.getY()), Math.min(start.getZ(), end.getZ()));
         BlockPos max = new BlockPos(Math.max(start.getX(), end.getX()), Math.max(start.getY(), end.getY()), Math.max(start.getZ(), end.getZ()));
 
-        List<GhostHistoryManager.StateChange> changes = new ArrayList<>();
-
+        Map<BlockPos, BlockSnapshot> changes = new HashMap<>();
         for (BlockPos p : BlockPos.betweenClosed(min, max)) {
-            BlockState worldState = level.getBlockState(p);
-            if (!worldState.isAir() && !(worldState.getBlock() instanceof GhostBlock)) {
-                CompoundTag oldData = null;
-                net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
-                if (be != null) oldData = be.saveWithFullMetadata(level.registryAccess());
-
-                changes.add(new GhostHistoryManager.StateChange(p.immutable(), worldState, Blocks.AIR.defaultBlockState(), oldData, null));
-                GhostJobManager.get(level).registerDirectDeconstruct(p, Blocks.AIR.defaultBlockState(), level);
-            }
+            changes.put(p.immutable(), BlockSnapshot.AIR);
         }
-        GhostHistoryManager.recordAction(player, changes);
+        WorldHistoryManager.get(level).pushAction(new WorldHistoryManager.HistoryAction("Deconstruction Area", changes), level);
     }
 }

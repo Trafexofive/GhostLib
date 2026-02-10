@@ -22,59 +22,63 @@ public class DroneItem extends DeferredSpawnEggItem {
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
+    public void appendHoverText(ItemStack stack, net.minecraft.world.item.Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         super.appendHoverText(stack, context, tooltip, flag);
 
+        tooltip.add(Component.literal("Construction Unit").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
+
         net.minecraft.world.item.component.CustomData customData = stack.get(DataComponents.ENTITY_DATA);
+        
+        int energy = 10000;
+        double maxEnergy = 10000;
+        double workSpeed = 1.0;
+        double interactRange = 4.5;
+        double searchRange = 64.0;
+        double efficiency = 1.0;
+
         if (customData != null) {
             CompoundTag tag = customData.copyTag();
-            
-            // Energy
-            int energy = tag.getInt("Energy");
-            // Try to find max energy in attributes list if present
-            double maxEnergy = 10000;
+            energy = tag.contains("Energy") ? tag.getInt("Energy") : 10000;
+
             if (tag.contains("Attributes", Tag.TAG_LIST)) {
                 ListTag attributes = tag.getList("Attributes", Tag.TAG_COMPOUND);
                 for (int i = 0; i < attributes.size(); i++) {
                     CompoundTag attr = attributes.getCompound(i);
-                    if (attr.getString("Name").equals("ghostlib:max_energy")) {
-                        maxEnergy = attr.getDouble("Base");
-                        break;
-                    }
+                    String name = attr.getString("Name");
+                    double val = attr.getDouble("Base");
+                    
+                    if (name.equals("ghostlib:max_energy")) maxEnergy = val;
+                    else if (name.equals("ghostlib:work_speed")) workSpeed = val;
+                    else if (name.equals("ghostlib:interaction_range")) interactRange = val;
+                    else if (name.equals("ghostlib:search_range")) searchRange = val;
+                    else if (name.equals("ghostlib:energy_efficiency")) efficiency = val;
                 }
             }
+        }
 
-            tooltip.add(Component.literal("Energy: ").withStyle(ChatFormatting.GRAY)
-                    .append(Component.literal(energy + " / " + (int)maxEnergy + " FE")
-                            .withStyle(energy > maxEnergy * 0.2 ? ChatFormatting.GREEN : ChatFormatting.RED)));
+        // Energy Bar Style
+        tooltip.add(Component.literal("Energy: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(energy + " / " + (int)maxEnergy + " FE")
+                        .withStyle(energy > maxEnergy * 0.2 ? ChatFormatting.GREEN : ChatFormatting.RED)));
 
-            // Attributes
-            if (flag.isAdvanced()) {
-                tooltip.add(Component.literal("Drone Stats:").withStyle(ChatFormatting.DARK_PURPLE));
-                if (tag.contains("Attributes", Tag.TAG_LIST)) {
-                    ListTag attributes = tag.getList("Attributes", Tag.TAG_COMPOUND);
-                    for (int i = 0; i < attributes.size(); i++) {
-                        CompoundTag attr = attributes.getCompound(i);
-                        String name = attr.getString("Name");
-                        if (name.startsWith("ghostlib:")) {
-                            String shortName = name.replace("ghostlib:", "").replace("_", " ");
-                            double val = attr.getDouble("Base");
-                            tooltip.add(Component.literal("  " + capitalize(shortName) + ": ").withStyle(ChatFormatting.GRAY)
-                                    .append(Component.literal(String.format("%.1f", val)).withStyle(ChatFormatting.WHITE)));
-                        }
-                    }
-                }
-            } else {
-                tooltip.add(Component.literal("Hold [Shift] for stats").withStyle(ChatFormatting.DARK_GRAY));
-            }
-        } else {
-            tooltip.add(Component.literal("New Factory Unit").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
-            tooltip.add(Component.literal("Energy: 10000 / 10000 FE").withStyle(ChatFormatting.GRAY));
+        // Stats - Always visible now as requested
+        tooltip.add(Component.literal("Drone Stats:").withStyle(ChatFormatting.DARK_PURPLE));
+        tooltip.add(Component.literal("  Work Speed: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.format("%.1f", workSpeed)).withStyle(ChatFormatting.WHITE)));
+        tooltip.add(Component.literal("  Interact Range: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.format("%.1f", interactRange)).withStyle(ChatFormatting.WHITE)));
+        tooltip.add(Component.literal("  Search Range: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.format("%.0f", searchRange)).withStyle(ChatFormatting.WHITE)));
+        tooltip.add(Component.literal("  Efficiency: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.format("%.1f", efficiency) + "x").withStyle(ChatFormatting.WHITE)));
+
+        if (customData != null && !isInventoryEmpty(customData.copyTag())) {
+            tooltip.add(Component.literal("Contains Items").withStyle(ChatFormatting.YELLOW, ChatFormatting.ITALIC));
         }
     }
 
-    private String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
-        return str.substring(0, 1).toUpperCase() + str.substring(1);
+    private boolean isInventoryEmpty(CompoundTag tag) {
+        if (!tag.contains("Inventory", Tag.TAG_LIST)) return true;
+        return tag.getList("Inventory", Tag.TAG_COMPOUND).isEmpty();
     }
 }

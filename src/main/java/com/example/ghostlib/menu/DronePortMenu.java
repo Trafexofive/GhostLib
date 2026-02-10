@@ -37,7 +37,7 @@ public class DronePortMenu extends ModularUIContainerMenu {
             }
             @Override
             public boolean isStillValid(net.minecraft.world.entity.player.Player player) {
-                return false; // Close as soon as possible
+                return false;
             }
         };
     }
