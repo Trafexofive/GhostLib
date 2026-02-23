@@ -487,91 +487,73 @@ public class DroneEntity extends PathfinderMob {
         if (!validateActiveJob()) return;
 
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
-        if (hasItemInInventory(required)) { droneState = DroneState.TRAVELING_BUILD; return; }
+        if (hasItemInInventory(required)) {
+            GhostLogger.drone("Drone " + this.getId() + ": already has " + required + ", going to build.");
+            droneState = DroneState.TRAVELING_BUILD;
+            return;
+        }
 
         // PORT: go home to extract
         if (getMode() == DroneMode.PORT && getPortPos().isPresent()) {
             BlockPos portPos = getPortPos().get();
             moveSmoothlyTo(Vec3.atCenterOf(portPos).add(0, 1, 0), 0.7);
+
             if (this.position().distanceTo(Vec3.atCenterOf(portPos).add(0, 1, 0)) < 2.0) {
                 if (level().getBlockEntity(portPos) instanceof IDronePort dp) {
+                    GhostLogger.drone("Drone " + this.getId() + ": at port, trying to extract " + required);
                     ItemStack extracted = dp.extractItem(required, 1, false);
                     if (!extracted.isEmpty()) {
+                        GhostLogger.drone("Drone " + this.getId() + ": got " + extracted + " from port!");
                         inventory.addItem(extracted);
                         droneState = DroneState.TRAVELING_BUILD;
                         updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.INCOMING);
+                        return;
                     }
-                    // If extract failed → stay in TRAVELING_FETCH; port may restock
+                    GhostLogger.drone("Drone " + this.getId() + ": port extract FAILED, trying player inventory as fallback.");
                 }
             }
             return;
         }
 
-        // Network container search
-        BlockPos containerPos = findNearbyContainerWithItem(required);
-        if (containerPos != null) {
-            moveSmoothlyTo(Vec3.atCenterOf(containerPos), 0.7);
-            if (this.position().distanceTo(Vec3.atCenterOf(containerPos)) < 2.0) {
-                if (extractFromContainer(containerPos, required)) {
+        // Fallback: Player inventory (last resort)
+        Player player = level().getNearestPlayer(this, 64);
+        if (player != null) {
+            Vec3 fetchPos = player.position().add(0, player.getEyeHeight(), 0);
+            moveSmoothlyTo(fetchPos, 0.7);
+
+            if (this.position().distanceTo(fetchPos) < 2.0) {
+                if (fetchPlayerCooldown > 0) return;
+                fetchPlayerCooldown = 10;
+
+                int slot = findPlayerItemSlot(player, required);
+                if (slot != -1) {
+                    ItemStack stackInSlot = player.getInventory().getItem(slot);
+                    if (!hasSpace()) {
+                        droneState = DroneState.DUMPING_ITEMS;
+                        releaseCurrentJob();
+                        return;
+                    }
+
+                    ItemStack extracted = stackInSlot.copy();
+                    extracted.setCount(1);
+                    player.getInventory().removeItem(slot, 1);
+                    inventory.addItem(extracted);
+                    GhostLogger.drone("Drone " + this.getId() + ": got " + required + " from player!");
                     droneState = DroneState.TRAVELING_BUILD;
                     updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.INCOMING);
-                } else {
-                    // Race — item taken by someone else
-                    GhostLogger.drone("Drone " + this.getId() + ": fetch race at " + containerPos + ", retrying.");
+                    return;
                 }
             }
             return;
         }
 
-        // Player fallback — rate-limited: one inventory scan per 10 t while in range
-        Player player = level().getNearestPlayer(this, 64);
-        if (player == null) {
-            GhostLogger.drone("Drone " + this.getId() + ": no items available anywhere (not in port storage or player inv).");
-            droneState = DroneState.FINDING_JOB; // try again later
-            return;
-        }
-
-        Vec3 fetchPos = player.position().add(0, player.getEyeHeight(), 0);
-        moveSmoothlyTo(fetchPos, 0.7);
-
-        if (this.position().distanceTo(fetchPos) < 2.0) {
-            if (fetchPlayerCooldown > 0) return; // rate limiter
-            fetchPlayerCooldown = 10;
-
-            int slot = findPlayerItemSlot(player, required);
-            if (slot == -1) {
-                // Player doesn't have it either — hibernate this job
-                GhostLogger.drone("Drone " + this.getId() + ": item not in port storage or player inv. Marking MISSING_ITEMS.");
-                updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.MISSING_ITEMS);
-                GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-                currentJob  = null;
-                droneState  = DroneState.IDLE;
-                waitTicks   = 100;
-                return;
-            }
-
-            ItemStack stackInSlot = player.getInventory().getItem(slot);
-            if (!hasSpace()) {
-                GhostLogger.drone("Drone " + this.getId() + ": inventory full during player fetch, dumping first.");
-                droneState = DroneState.DUMPING_ITEMS;
-                releaseCurrentJob();
-                return;
-            }
-
-            ItemStack taken     = stackInSlot.split(1);
-            ItemStack remainder = inventory.addItem(taken);
-            if (!remainder.isEmpty()) {
-                // Rollback
-                stackInSlot.grow(1);
-                GhostLogger.drone("Drone " + this.getId() + ": addItem rollback (inventory corrupt?)");
-                droneState = DroneState.DUMPING_ITEMS;
-                releaseCurrentJob();
-                return;
-            }
-
-            droneState = DroneState.TRAVELING_BUILD;
-            updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.INCOMING);
-        }
+        // No items available anywhere - mark job as missing items
+        GhostLogger.drone("Drone " + this.getId() + ": NO ITEMS AVAILABLE anywhere (port or player). Marking MISSING_ITEMS.");
+        updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.MISSING_ITEMS);
+        GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
+        currentJob  = null;
+        droneState  = DroneState.IDLE;
+        waitTicks   = 100;
     }
 
     // ── TRAVELING_BUILD ───────────────────────────────────────────────────────
