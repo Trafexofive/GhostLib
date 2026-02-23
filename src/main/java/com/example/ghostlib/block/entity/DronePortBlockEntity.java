@@ -36,8 +36,6 @@ import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Comparator;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -274,28 +272,27 @@ public class DronePortBlockEntity extends BlockEntity
             remainder = inventory.insertItem(i, remainder, simulate);
         }
 
-        // 2. Scan nearby inventories within 16 blocks (vanilla chests, barrels, etc.)
+        // 2. Scan nearby inventories within 8 blocks (optimized from 16)
         if (!remainder.isEmpty() && level != null && !level.isClientSide && !simulate) {
-            int range = 16;
+            int range = 8;
             BlockPos center = worldPosition;
 
-            // Sort positions by distance to prefer closer inventories
-            List<BlockPos> nearbyPositions = new java.util.ArrayList<>();
-            for (BlockPos pos : BlockPos.betweenClosed(
-                    center.offset(-range, -4, -range),
-                    center.offset(range, 4, range))) {
-                if (pos.equals(worldPosition)) continue;
-                if (!level.isLoaded(pos)) continue;
-                nearbyPositions.add(pos);
-            }
-            nearbyPositions.sort(Comparator.comparingDouble(p -> p.distSqr(center)));
+            for (int x = -range; x <= range; x++) {
+                for (int y = -4; y <= 4; y++) {
+                    for (int z = -range; z <= range; z++) {
+                        if (x == 0 && y == 0 && z == 0) continue;
 
-            for (BlockPos pos : nearbyPositions) {
-                net.neoforged.neoforge.items.IItemHandler handler =
-                        level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
-                if (handler == null) continue;
+                        BlockPos pos = center.offset(x, y, z);
+                        if (!level.isLoaded(pos)) continue;
 
-                remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, remainder, simulate);
+                        net.neoforged.neoforge.items.IItemHandler handler =
+                                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+                        if (handler == null) continue;
+
+                        remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, remainder, simulate);
+                        if (remainder.isEmpty()) break;
+                    }
+                }
                 if (remainder.isEmpty()) break;
             }
         }
@@ -308,47 +305,36 @@ public class DronePortBlockEntity extends BlockEntity
         // 1. Check port's own inventory first
         for (int i = 0; i < inventory.getSlots(); i++) {
             if (inventory.getStackInSlot(i).is(stack.getItem())) {
-                com.example.ghostlib.util.GhostLogger.logistics("Port extract: found " + stack.getItem() + " in port slot " + i);
                 return inventory.extractItem(i, amount, simulate);
             }
         }
 
-        // 2. Scan nearby inventories within 16 blocks (vanilla chests, barrels, etc.)
+        // 2. Scan nearby inventories within 8 blocks (optimized from 16)
         if (level != null && !level.isClientSide) {
-            int range = 16;
+            int range = 8;
             BlockPos center = worldPosition;
 
-            // Sort positions by distance to prefer closer inventories
-            List<BlockPos> nearbyPositions = new java.util.ArrayList<>();
-            for (BlockPos pos : BlockPos.betweenClosed(
-                    center.offset(-range, -4, -range),
-                    center.offset(range, 4, range))) {
-                if (pos.equals(worldPosition)) continue;
-                if (!level.isLoaded(pos)) continue;
-                nearbyPositions.add(pos);
-            }
-            nearbyPositions.sort(Comparator.comparingDouble(p -> p.distSqr(center)));
+            // Early exit on first match - no sorting needed for extraction
+            for (int x = -range; x <= range; x++) {
+                for (int y = -4; y <= 4; y++) {
+                    for (int z = -range; z <= range; z++) {
+                        if (x == 0 && y == 0 && z == 0) continue;
 
-            com.example.ghostlib.util.GhostLogger.logistics("Port extract: scanning " + nearbyPositions.size() + " nearby inventories for " + stack.getItem());
+                        BlockPos pos = center.offset(x, y, z);
+                        if (!level.isLoaded(pos)) continue;
 
-            for (BlockPos pos : nearbyPositions) {
-                net.neoforged.neoforge.items.IItemHandler handler =
-                        level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
-                if (handler == null) continue;
+                        net.neoforged.neoforge.items.IItemHandler handler =
+                                level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+                        if (handler == null) continue;
 
-                for (int i = 0; i < handler.getSlots(); i++) {
-                    if (handler.getStackInSlot(i).is(stack.getItem())) {
-                        com.example.ghostlib.util.GhostLogger.logistics("Port extract: found " + stack.getItem() + " at " + pos + " slot " + i);
-                        ItemStack extracted = handler.extractItem(i, amount, simulate);
-                        if (!extracted.isEmpty()) {
-                            com.example.ghostlib.util.GhostLogger.logistics("Port extract: extracted " + extracted.getCount() + " from " + pos);
-                            return extracted;
+                        for (int i = 0; i < handler.getSlots(); i++) {
+                            if (handler.getStackInSlot(i).is(stack.getItem())) {
+                                return handler.extractItem(i, amount, simulate);
+                            }
                         }
                     }
                 }
             }
-
-            com.example.ghostlib.util.GhostLogger.logistics("Port extract: FAILED to find " + stack.getItem() + " in any nearby inventory");
         }
 
         return ItemStack.EMPTY;
