@@ -120,7 +120,12 @@ public class DroneEntity extends PathfinderMob {
 
     /** Watchdog — how many ticks a job may be active before forced abort. */
     private int jobWatchdog = 0;
-    private static final int WATCHDOG_LIMIT = 1200; // 60 s; covers 64-block travel + fetch + build
+    private static final int WATCHDOG_LIMIT = 600; // 30 seconds
+
+    /** State watchdog — detect stuck drones in any state */
+    private int stateWatchdog = 0;
+    private DroneState lastState = DroneState.IDLE;
+    private static final int STATE_WATCHDOG_LIMIT = 300; // 15 seconds per state
 
     // -------------------------------------------------------------------------
     // Resources
@@ -341,12 +346,23 @@ public class DroneEntity extends PathfinderMob {
             }
 
             if (++jobWatchdog > WATCHDOG_LIMIT) {
-                GhostLogger.drone("Drone " + this.getId() + ": watchdog expired at " + currentJob.pos() + ". Releasing.");
+                GhostLogger.drone("Drone " + this.getId() + ": job watchdog expired. Releasing.");
                 resetToIdle();
                 return;
             }
         } else {
             jobWatchdog = 0;
+        }
+
+        // State watchdog — detect stuck drones
+        if (droneState != lastState) {
+            lastState = droneState;
+            stateWatchdog = 0;
+        } else if (++stateWatchdog > STATE_WATCHDOG_LIMIT) {
+            GhostLogger.drone("Drone " + this.getId() + ": stuck in " + droneState + " for " + STATE_WATCHDOG_LIMIT + " ticks. Hard reset.");
+            resetToIdle();
+            energy = 5000; // Emergency energy
+            return;
         }
 
         // ── Port orphan check ─────────────────────────────────────────────────
@@ -382,6 +398,17 @@ public class DroneEntity extends PathfinderMob {
     // ── IDLE ─────────────────────────────────────────────────────────────────
 
     private void handleIdle() {
+        // CRITICAL: Energy check FIRST - always prioritize charging
+        if (energy <= 0) {
+            if (getMode() == DroneMode.PORT) {
+                droneState = DroneState.CHARGING;
+                return;
+            } else {
+                droneState = DroneState.RETURNING_TO_OWNER;
+                return;
+            }
+        }
+
         // Low energy → charge/recall first
         if (energy < getAttributeValue(ModAttributes.MAX_ENERGY) * 0.2) {
             if (getMode() == DroneMode.PORT)    { droneState = DroneState.CHARGING; return; }
