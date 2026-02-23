@@ -342,7 +342,7 @@ public class DronePortBlockEntity extends BlockEntity
             }
         }
 
-        // 2. Check connected logistics network (LogisticalChests)
+        // 2. Check marked inventories in logistics network (HIGHEST PRIORITY)
         if (level != null && !level.isClientSide) {
             LogisticsNetworkManager netMgr = LogisticsNetworkManager.get(level);
             Integer netId = netMgr.getNetworkId(worldPosition);
@@ -355,7 +355,7 @@ public class DronePortBlockEntity extends BlockEntity
                             level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, memberPos, null);
                     if (handler == null) continue;
 
-                    // Check if this chest has the item
+                    // Check if this inventory has the item
                     for (int i = 0; i < handler.getSlots(); i++) {
                         if (handler.getStackInSlot(i).is(stack.getItem())) {
                             ItemStack extracted = handler.extractItem(i, amount, simulate);
@@ -374,7 +374,8 @@ public class DronePortBlockEntity extends BlockEntity
             }
         }
 
-        // 3. Fallback: Scan nearby inventories (vanilla chests, barrels, etc.) within 16 blocks
+        // 3. Fallback: Auto-scan nearby vanilla inventories within 16 blocks
+        // Only used if no marked inventories have the item
         if (level != null && !level.isClientSide && !simulate) {
             int range = 16;
             BlockPos center = worldPosition;
@@ -388,7 +389,7 @@ public class DronePortBlockEntity extends BlockEntity
                         level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
                 if (handler == null) continue;
 
-                // Skip logistical chests (already handled above)
+                // Skip logistical chests (already handled in step 2)
                 if (level.getBlockEntity(pos) instanceof LogisticalChestBlockEntity) continue;
 
                 for (int i = 0; i < handler.getSlots(); i++) {
