@@ -25,6 +25,7 @@ public class LevelTickHandler {
         if (event.getLevel() instanceof Level level && !level.isClientSide) {
             com.example.ghostlib.util.GhostJobManager.get(level).tick(level);
             com.example.ghostlib.history.WorldReconciler.get(level).tick((net.minecraft.server.level.ServerLevel)level);
+            com.example.ghostlib.history.GhostHistoryManager.tick(); // Watchdog for stuck flag
         }
     }
 

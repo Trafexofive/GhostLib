@@ -239,12 +239,106 @@ public class LogisticsCoordinator {
     }
     
     /**
-     * Perform actual balancing between inventories
+     * Perform actual balancing between inventories.
+     * Moves items from over-stocked chests to under-stocked chests.
      */
     private void performBalancing(List<net.neoforged.neoforge.items.IItemHandler> inventories, Map<String, Integer> targetPerChest) {
-        // This would implement the actual balancing algorithm
-        // For now, we'll just log the intended action
-        com.example.ghostlib.util.GhostLogger.logistics("Network " + networkId + " performing inventory balancing with targets: " + targetPerChest);
+        if (inventories.isEmpty()) return;
+
+        int numChests = inventories.size();
+
+        // Track which items we've already balanced this call
+        Set<String> balancedItems = new HashSet<>();
+
+        for (String itemKey : targetPerChest.keySet()) {
+            if (balancedItems.contains(itemKey)) continue;
+
+            int targetPerChestForItem = targetPerChest.get(itemKey);
+
+            // Find chests with excess and deficits
+            List<ExcessChest> excessChests = new ArrayList<>();
+            List<DeficitChest> deficitChests = new ArrayList<>();
+
+            for (int i = 0; i < inventories.size(); i++) {
+                net.neoforged.neoforge.items.IItemHandler inv = inventories.get(i);
+                int totalCount = 0;
+                List<Integer> slots = new ArrayList<>();
+
+                for (int slot = 0; slot < inv.getSlots(); slot++) {
+                    ItemStack stack = inv.getStackInSlot(slot);
+                    if (!stack.isEmpty() && getItemKey(stack).equals(itemKey)) {
+                        totalCount += stack.getCount();
+                        slots.add(slot);
+                    }
+                }
+
+                if (totalCount > targetPerChestForItem) {
+                    excessChests.add(new ExcessChest(i, slots, totalCount - targetPerChestForItem));
+                } else if (totalCount < targetPerChestForItem) {
+                    deficitChests.add(new DeficitChest(i, targetPerChestForItem - totalCount));
+                }
+            }
+
+            // Transfer from excess to deficit
+            for (ExcessChest excess : excessChests) {
+                if (excess.amount <= 0) break;
+
+                for (DeficitChest deficit : deficitChests) {
+                    if (deficit.amount <= 0) break;
+                    if (excess.amount <= 0) break;
+
+                    net.neoforged.neoforge.items.IItemHandler fromInv = inventories.get(excess.chestIndex);
+                    net.neoforged.neoforge.items.IItemHandler toInv = inventories.get(deficit.chestIndex);
+
+                    // Try to extract from excess
+                    for (int slot : excess.slots) {
+                        ItemStack extracted = fromInv.extractItem(slot, deficit.amount, false);
+                        if (extracted.isEmpty()) continue;
+
+                        // Insert into deficit
+                        ItemStack remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItem(toInv, extracted, false);
+                        int actuallyInserted = extracted.getCount() - remainder.getCount();
+
+                        excess.amount -= actuallyInserted;
+                        deficit.amount -= actuallyInserted;
+
+                        if (excess.amount <= 0) break;
+                    }
+                }
+            }
+
+            balancedItems.add(itemKey);
+        }
+
+        com.example.ghostlib.util.GhostLogger.logistics("Network " + networkId + " completed inventory balancing");
+    }
+
+    /**
+     * Helper record for tracking excess items in a chest.
+     */
+    private static class ExcessChest {
+        final int chestIndex;
+        final List<Integer> slots;
+        int amount;
+
+        ExcessChest(int chestIndex, List<Integer> slots, int amount) {
+            this.chestIndex = chestIndex;
+            this.slots = slots;
+            this.amount = amount;
+        }
+    }
+
+    /**
+     * Helper record for tracking item deficits in a chest.
+     */
+    private static class DeficitChest {
+        final int chestIndex;
+        int amount;
+
+        DeficitChest(int chestIndex, int amount) {
+            this.chestIndex = chestIndex;
+            this.amount = amount;
+        }
     }
     
     /**

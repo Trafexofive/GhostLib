@@ -32,21 +32,14 @@ public class HistoryEventSubscriber {
         if (!(event.getEntity() instanceof Player player)) return;
         if (GhostHistoryManager.isProcessingHistory) return;
 
-        // IGNORE: Reconciler/Drones are not players. 
-        // Manual interactions with ghosts (e.g. replacing a ghost with a real block) 
-        // are allowed to be recorded as intent overrides.
-
         BlockPos pos = event.getPos().immutable();
         BlockState newState = event.getPlacedBlock();
-        
-        // Capture 'Before' state from the snapshot
         BlockState oldState = event.getBlockSnapshot().getState();
-        CompoundTag oldNbt = null;
-        // In 1.21, block snapshots usually contain the BE data if it existed
-        // but we'll try to extract from the snapshot components if possible or assume AIR for fresh placements
-        
+
+        com.example.ghostlib.util.GhostLogger.logistics("MANUAL PLACE: " + player.getName().getString() + " placed " + newState + " at " + pos + " (replacing " + oldState + ")");
+
         BlockSnapshot before = new BlockSnapshot(oldState, null);
-        BlockSnapshot after = new BlockSnapshot(newState, null); // Manual placement NBT is usually uninitialized
+        BlockSnapshot after = new BlockSnapshot(newState, null);
 
         WorldHistoryManager.get((Level)event.getLevel()).pushAction(
             new WorldHistoryManager.HistoryAction("Manual Place", Map.of(pos, after)),
@@ -68,6 +61,8 @@ public class HistoryEventSubscriber {
         CompoundTag oldNbt = null;
         var be = event.getLevel().getBlockEntity(pos);
         if (be != null) oldNbt = be.saveWithFullMetadata(event.getLevel().registryAccess());
+
+        com.example.ghostlib.util.GhostLogger.logistics("MANUAL BREAK: " + player.getName().getString() + " broke " + oldState + " at " + pos);
 
         BlockSnapshot before = new BlockSnapshot(oldState, oldNbt);
 

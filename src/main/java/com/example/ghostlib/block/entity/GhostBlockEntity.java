@@ -97,8 +97,21 @@ public class GhostBlockEntity extends BlockEntity {
 
     /**
      * Changes the current lifecycle state and updates the Job Manager queues.
+     *
+     * STATE MACHINE TRANSITIONS (valid only):
+     * - UNASSIGNED -> ASSIGNED, TO_REMOVE, MISSING_ITEMS
+     * - ASSIGNED -> FETCHING, UNASSIGNED (if release)
+     * - FETCHING -> INCOMING, UNASSIGNED (if abort)
+     * - INCOMING -> UNASSIGNED (after place)
+     * - TO_REMOVE -> REMOVING, UNASSIGNED
+     * - REMOVING -> UNASSIGNED (after break)
+     * - MISSING_ITEMS -> UNASSIGNED (if items restored)
      */
     public void setState(GhostState state) {
+        if (!isValidTransition(this.currentState, state)) {
+            com.example.ghostlib.util.GhostLogger.logistics("GhostBlockEntity: Invalid state transition " + this.currentState + " -> " + state + " at " + worldPosition);
+            return;
+        }
         this.currentState = state;
         if (level != null && !level.isClientSide) {
             // Only register if we have a target or are deconstructing
@@ -110,37 +123,68 @@ public class GhostBlockEntity extends BlockEntity {
     }
 
     /**
+     * Validates state transitions to prevent state machine corruption.
+     */
+    private boolean isValidTransition(GhostState from, GhostState to) {
+        if (from == to) return true; // No-op
+        return switch (from) {
+            case UNASSIGNED -> to == GhostState.ASSIGNED || to == GhostState.TO_REMOVE || to == GhostState.MISSING_ITEMS;
+            case ASSIGNED -> to == GhostState.FETCHING || to == GhostState.UNASSIGNED;
+            case FETCHING -> to == GhostState.INCOMING || to == GhostState.UNASSIGNED;
+            case INCOMING -> to == GhostState.UNASSIGNED; // After successful place
+            case TO_REMOVE -> to == GhostState.REMOVING || to == GhostState.UNASSIGNED;
+            case REMOVING -> to == GhostState.UNASSIGNED; // After successful break
+            case MISSING_ITEMS -> to == GhostState.UNASSIGNED || to == GhostState.TO_REMOVE;
+        };
+    }
+
+    /**
      * Called when the BlockEntity is loaded into the world.
      * Ensures the job is registered in the JobManager's volatile memory.
+     * Does NOT duplicate if job already exists (chunk reload safety).
      */
     @Override
     public void onLoad() {
         super.onLoad();
         if (level != null && !level.isClientSide) {
             if (!targetState.isAir() || currentState == GhostState.TO_REMOVE || currentState == GhostState.REMOVING) {
-                GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);
+                // Check if job already registered to prevent duplicates on chunk reload
+                GhostJobManager manager = GhostJobManager.get(level);
+                if (!manager.hasJob(getBlockPos())) {
+                    manager.registerJob(getBlockPos(), this.currentState, targetState);
+                }
             }
         }
     }
 
+    /**
+     * Assigns or unassigns a drone to this ghost block.
+     * Handles state transitions properly:
+     * - MISSING_ITEMS -> ASSIGNED only if items are now available (caller's responsibility)
+     * - TO_REMOVE -> REMOVING when assigned
+     * - REMOVING -> TO_REMOVE when unassigned
+     */
     public void setAssignedTo(@Nullable UUID assignedTo) {
         this.assignedTo = assignedTo;
         if (assignedTo != null) {
             // Transition from Queue -> Active
-            if (this.currentState == GhostState.TO_REMOVE) {
-                this.currentState = GhostState.REMOVING;
-            } else {
+            // Note: MISSING_ITEMS can be reassigned if items are now available
+            if (this.currentState == GhostState.TO_REMOVE || this.currentState == GhostState.MISSING_ITEMS) {
+                this.currentState = this.currentState == GhostState.TO_REMOVE ? GhostState.REMOVING : GhostState.ASSIGNED;
+            } else if (this.currentState == GhostState.UNASSIGNED) {
                 this.currentState = GhostState.ASSIGNED;
             }
+            // else: already in an active state, don't change
         } else {
             // Unassigning - return to the appropriate queue state
             if (this.currentState == GhostState.REMOVING) {
                 this.currentState = GhostState.TO_REMOVE;
-            } else if (this.currentState != GhostState.MISSING_ITEMS) {
+            } else if (this.currentState == GhostState.ASSIGNED || this.currentState == GhostState.FETCHING || this.currentState == GhostState.INCOMING) {
                 this.currentState = GhostState.UNASSIGNED;
             }
+            // MISSING_ITEMS stays MISSING_ITEMS when unassigned (items still missing)
         }
-        
+
         if (level != null && !level.isClientSide) {
             if (!targetState.isAir() || currentState == GhostState.TO_REMOVE || currentState == GhostState.REMOVING) {
                 GhostJobManager.get(level).registerJob(getBlockPos(), this.currentState, targetState);

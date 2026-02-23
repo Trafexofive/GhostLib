@@ -37,8 +37,15 @@ public class WorldHistoryManager extends SavedData {
      * Lineage per coordinate.
      * Index 0: Natural Spawn State.
      * Index N: Current Intended State.
+     *
+     * MEMORY SAFETY: Stack depth is capped at MAX_STACK_DEPTH to prevent OOM.
+     * When the cap is reached, the root state is shifted forward if it differs
+     * from the current top, otherwise older entries are pruned.
      */
     private final Map<BlockPos, List<BlockSnapshot>> coordinateStacks = new ConcurrentHashMap<>();
+
+    /** Maximum history depth per coordinate to prevent memory exhaustion */
+    private static final int MAX_STACK_DEPTH = 32;
     
     /**
      * Set of positions where intended state has changed and requires reconciliation.
@@ -98,10 +105,11 @@ public class WorldHistoryManager extends SavedData {
      * @param baseStates Optional map of states that existed BEFORE the action (critical for manual actions).
      */
     public void pushAction(HistoryAction action, Level level, Map<BlockPos, BlockSnapshot> baseStates) {
+        com.example.ghostlib.util.GhostLogger.logistics("PUSH: Action '" + action.name() + "' with " + action.changes().size() + " changes");
         for (Map.Entry<BlockPos, BlockSnapshot> entry : action.changes().entrySet()) {
             BlockPos pos = entry.getKey().immutable();
             BlockSnapshot newState = entry.getValue();
-            
+
             List<BlockSnapshot> stack = coordinateStacks.computeIfAbsent(pos, p -> {
                 List<BlockSnapshot> s = new ArrayList<>();
                 // Use provided base state (manual) or capture current (blueprint)
@@ -112,12 +120,40 @@ public class WorldHistoryManager extends SavedData {
             if (!stack.get(stack.size() - 1).equals(newState)) {
                 stack.add(newState);
                 dirtyPositions.add(pos);
+
+                // MEMORY SAFETY: Cap stack depth and prune
+                pruneStackIfNeeded(stack);
             }
         }
         undoStack.push(action);
+        com.example.ghostlib.util.GhostLogger.logistics("PUSH: undoStack size now = " + undoStack.size());
         if (undoStack.size() > MAX_HISTORY_SIZE) undoStack.removeLast();
         redoStack.clear();
         setDirty();
+    }
+
+    /**
+     * Prunes the stack to prevent memory exhaustion.
+     * - If stack exceeds MAX_STACK_DEPTH, shift root forward if different from top.
+     * - If root == top (state returned to natural), remove entire stack.
+     */
+    private void pruneStackIfNeeded(List<BlockSnapshot> stack) {
+        if (stack.size() <= MAX_STACK_DEPTH) return;
+
+        BlockSnapshot root = stack.get(0);
+        BlockSnapshot top = stack.get(stack.size() - 1);
+
+        // If top equals root, the coordinate has returned to its natural state - clear stack
+        if (root.equals(top)) {
+            stack.clear();
+            return;
+        }
+
+        // Otherwise, keep only the last MAX_STACK_DEPTH entries
+        // This preserves recent history while preventing unbounded growth
+        List<BlockSnapshot> pruned = new ArrayList<>(stack.subList(stack.size() - MAX_STACK_DEPTH, stack.size()));
+        stack.clear();
+        stack.addAll(pruned);
     }
 
     public void pushAction(HistoryAction action, Level level) {
@@ -158,6 +194,14 @@ public class WorldHistoryManager extends SavedData {
 
     public Set<BlockPos> getDirtyPositions() {
         return dirtyPositions;
+    }
+
+    public Deque<HistoryAction> getUndoStack() {
+        return undoStack;
+    }
+
+    public Deque<HistoryAction> getRedoStack() {
+        return redoStack;
     }
 
     public void markClean(BlockPos pos) {

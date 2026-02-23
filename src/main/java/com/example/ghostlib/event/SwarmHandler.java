@@ -12,8 +12,18 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 @EventBusSubscriber(modid = GhostLib.MODID)
 public class SwarmHandler {
+    // Separate rate limit counters for deploy and recall detection
+    // This prevents a full swarm from blocking recall detection
+    private static final Map<UUID, Integer> deployCounters = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> recallCounters = new ConcurrentHashMap<>();
+    private static final int DEPLOY_RATE_LIMIT = 5; // Max drones spawned per tick
+    private static final int RECALL_CHECK_INTERVAL = 10; // Check recall every 10 ticks
 
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent.Post event) {
@@ -21,87 +31,91 @@ public class SwarmHandler {
         if (player.level().isClientSide || !(player.level() instanceof ServerLevel serverLevel))
             return;
 
-        // Run logic every 20 ticks (1 second) to prevent lag
-        if (player.tickCount % 20 != 0)
-            return;
+        UUID playerId = player.getUUID();
 
-                GhostJobManager manager = GhostJobManager.get(serverLevel);
+        // Increment recall counter independently - ensures recall detection is never blocked by deploy
+        int recallCount = recallCounters.getOrDefault(playerId, 0) + 1;
+        recallCounters.put(playerId, recallCount);
 
-        
+        // Run deploy logic every 20 ticks (1 second) to prevent lag
+        int deployCount = deployCounters.getOrDefault(playerId, 0) + 1;
+        deployCounters.put(playerId, deployCount);
 
-                // Cap spawn rate at 5 per second
+        if (deployCount < 20) return;
+        deployCounters.put(playerId, 0); // Reset deploy counter
 
-                        for (int i = 0; i < 5; i++) {
+        GhostJobManager manager = GhostJobManager.get(serverLevel);
 
-                            // 1. Check if player even has a drone item before looking for jobs
+        // Cap spawn rate at DEPLOY_RATE_LIMIT per second to prevent server lag
+        for (int i = 0; i < DEPLOY_RATE_LIMIT; i++) {
 
-                            int droneSlot = findDroneInInventory(player);
+            // 1. Check if player even has a drone item before looking for jobs
 
-                            if (droneSlot == -1) break;
+            int droneSlot = findDroneInInventory(player);
 
-                
+            if (droneSlot == -1) break;
 
-                            // 2. Scan for a job
 
-                            GhostJobManager.Job job = manager.requestJob(player.blockPosition(), player.getUUID(), true);
 
-                            if (job == null) break;
+            // 2. Scan for a job
 
-                
+            GhostJobManager.Job job = manager.requestJob(player.blockPosition(), player.getUUID(), true);
 
-                            // 3. Capability Check: Construction jobs MUST have the item in inventory
+            if (job == null) break;
 
-                            boolean canFulfill = false;
 
-                            if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
 
-                                ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
+            // 3. Capability Check: Construction jobs MUST have the item in inventory
 
-                                if (hasItemInInventory(player, required)) {
+            boolean canFulfill = false;
 
-                                    canFulfill = true;
+            if (job.type() == GhostJobManager.JobType.CONSTRUCTION) {
 
-                                }
+                ItemStack required = new ItemStack(job.targetAfter().getBlock().asItem());
 
-                            } else {
+                if (hasItemInInventory(player, required)) {
 
-                                canFulfill = true; // Deconstruction always fulfillable
+                    canFulfill = true;
 
-                            }
+                }
 
-                
+            } else {
 
-                            if (canFulfill) {
-
-                                // 4. Deployment: Reassign job from player temporary ID to new drone ID
-
-                                spawnDroneFromSlot(player, droneSlot, job);
-
-                            } else {
-
-                                // 5. Cleanup: Material missing, release the job back to the manager
-
-                                manager.releaseJob(job.pos(), player.getUUID());
-
-                                
-
-                                // Set ghost state to Halted (Purple) so we don't spam deployment checks for it
-
-                                if (player.level().getBlockEntity(job.pos()) instanceof com.example.ghostlib.block.entity.GhostBlockEntity gbe) {
-
-                                    gbe.setState(com.example.ghostlib.block.entity.GhostBlockEntity.GhostState.MISSING_ITEMS);
-
-                                }
-
-                                continue;
-
-                            }
-
-                        }
-
-                
+                canFulfill = true; // Deconstruction always fulfillable
 
             }
+
+
+
+            if (canFulfill) {
+
+                // 4. Deployment: Reassign job from player temporary ID to new drone ID
+
+                spawnDroneFromSlot(player, droneSlot, job);
+
+            } else {
+
+                // 5. Cleanup: Material missing, release the job back to the manager
+
+                manager.releaseJob(job.pos(), player.getUUID());
+
+
+
+                // Set ghost state to Halted (Purple) so we don't spam deployment checks for it
+
+                if (player.level().getBlockEntity(job.pos()) instanceof com.example.ghostlib.block.entity.GhostBlockEntity gbe) {
+
+                    gbe.setState(com.example.ghostlib.block.entity.GhostBlockEntity.GhostState.MISSING_ITEMS);
+
+                }
+
+                continue;
+
+            }
+
+        }
+
+    }
 
     private static int findDroneInInventory(Player player) {
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {

@@ -20,8 +20,15 @@ public class ClientClipboard {
     private static final int MAX_HISTORY = 10;
     private static final LinkedList<CompoundTag> history = new LinkedList<>();
     private static int currentIndex = 0;
-    private static final File CLIPBOARD_FILE = new File(Minecraft.getInstance().gameDirectory, "ghostlib_clipboard.nbt");
+    private static File clipboardFile = null; // Lazy init
     private static boolean loaded = false;
+
+    private static File getClipboardFile() {
+        if (clipboardFile == null) {
+            clipboardFile = new File(Minecraft.getInstance().gameDirectory, "ghostlib_clipboard.nbt");
+        }
+        return clipboardFile;
+    }
 
     private static void ensureLoaded() {
         if (!loaded) {
@@ -85,16 +92,16 @@ public class ClientClipboard {
                 list.add(tag);
             }
             root.put("History", list);
-            NbtIo.writeCompressed(root, CLIPBOARD_FILE.toPath());
+            NbtIo.writeCompressed(root, getClipboardFile().toPath());
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     private static void load() {
-        if (!CLIPBOARD_FILE.exists()) return;
+        if (!getClipboardFile().exists()) return;
         try {
-            CompoundTag root = NbtIo.readCompressed(CLIPBOARD_FILE.toPath(), NbtAccounter.unlimitedHeap());
+            CompoundTag root = NbtIo.readCompressed(getClipboardFile().toPath(), NbtAccounter.unlimitedHeap());
             if (root.contains("History", Tag.TAG_LIST)) {
                 ListTag list = root.getList("History", Tag.TAG_COMPOUND);
                 history.clear();

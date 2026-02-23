@@ -50,12 +50,12 @@ public class CommonModEventSubscriber {
         String tag = "ghostlib_received_v14";
         if (!player.getPersistentData().contains(tag)) {
             player.getPersistentData().putBoolean(tag, true);
-            
+
             // player.getInventory().add(new ItemStack(ModItems.DRONE_SPAWN_EGG.get(), 64));
             // player.getInventory().add(new ItemStack(ModItems.MATERIAL_STORAGE.get(), 64));
             // player.getInventory().add(new ItemStack(ModItems.DRONE_PORT.get(), 64));
-            player.getInventory().add(new ItemStack(ModItems.BLUEPRINT.get(), 16));
-            
+            // player.getInventory().add(new ItemStack(ModItems.BLUEPRINT.get(), 16));
+
             // give player transmutation tablette at login for progression
             // player.getInventory().add(new ItemStack(
 
@@ -66,7 +66,7 @@ public class CommonModEventSubscriber {
             // player.getInventory().add(new ItemStack(ModItems.ACTIVE_PROVIDER_CHEST.get(), 64));
             // player.getInventory().add(new ItemStack(ModItems.BUFFER_CHEST.get(), 64));
 
-            player.getInventory().add(createBlueprint("Drone Port Array", createDronePortPattern()));
+            // player.getInventory().add(createBlueprint("Drone Port Array", createDronePortPattern()));
 
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("Ghost Swarm Logistics Protocol Initialized (V14)").withStyle(net.minecraft.ChatFormatting.GOLD), false);
         }

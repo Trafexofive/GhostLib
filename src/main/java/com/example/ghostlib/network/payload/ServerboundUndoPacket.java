@@ -2,6 +2,7 @@ package com.example.ghostlib.network.payload;
 
 import com.example.ghostlib.GhostLib;
 import com.example.ghostlib.history.GhostHistoryManager;
+import com.example.ghostlib.history.WorldHistoryManager;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -21,8 +22,15 @@ public record ServerboundUndoPacket() implements CustomPacketPayload {
 
     public static void handle(ServerboundUndoPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
+            com.example.ghostlib.util.GhostLogger.logistics("UNDO packet received from " + context.player().getName().getString());
             if (context.player() instanceof ServerPlayer player) {
+                com.example.ghostlib.util.GhostLogger.logistics("UNDO: Player is ServerPlayer, calling undo()");
+                com.example.ghostlib.util.GhostLogger.logistics("UNDO: undoStack size = " +
+                    WorldHistoryManager.get(player.level()).getUndoStack().size());
                 GhostHistoryManager.undo(player);
+                com.example.ghostlib.util.GhostLogger.logistics("UNDO: Complete");
+            } else {
+                com.example.ghostlib.util.GhostLogger.logistics("UNDO: Player is NOT ServerPlayer");
             }
         });
     }

@@ -20,7 +20,7 @@ public class PlayerLoginEventHandler {
             player.getPersistentData().putBoolean(tag, true);
 
             // Give Drones
-            player.getInventory().add(new ItemStack(ModItems.DRONE_SPAWN_EGG.get(), 16));
+            // player.getInventory().add(new ItemStack(ModItems.DRONE_SPAWN_EGG.get(), 16));
 
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("GhostLib Systems Online")
                     .withStyle(net.minecraft.ChatFormatting.AQUA), false);

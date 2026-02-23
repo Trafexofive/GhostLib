@@ -7,6 +7,7 @@ import java.util.*;
 public class GhostLibConfig {
     // Port Config
     public static int PORT_ENERGY_CAPACITY = 1000000;
+    public static int PORT_ENERGY_TRANSFER = 1000;
     public static int PORT_ENERGY_PER_SPAWN = 1000;
     public static int PORT_MAX_ACTIVE_DRONES = 32;
     public static int PORT_ACTIVATION_RANGE = 64;
@@ -51,6 +52,7 @@ public class GhostLibConfig {
                     content = """
                     port:
                       energy_capacity: 1000000
+                      energy_transfer: 1000
                       energy_per_spawn: 1000
                       max_active_drones: 16
                       activation_range: 64
@@ -84,6 +86,7 @@ public class GhostLibConfig {
         try {
             switch (key) {
                 case "port.energy_capacity" -> PORT_ENERGY_CAPACITY = Integer.parseInt(value);
+                case "port.energy_transfer" -> PORT_ENERGY_TRANSFER = Integer.parseInt(value);
                 case "port.energy_per_spawn" -> PORT_ENERGY_PER_SPAWN = Integer.parseInt(value);
                 case "port.max_active_drones" -> PORT_MAX_ACTIVE_DRONES = Integer.parseInt(value);
                 case "port.activation_range" -> PORT_ACTIVATION_RANGE = Integer.parseInt(value);

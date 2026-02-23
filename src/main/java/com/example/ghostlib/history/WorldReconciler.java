@@ -12,30 +12,36 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * THE RECONCILIATION ENGINE
- * 
- * This engine is the only bridge between the Command Ledger (Intent) and 
+ *
+ * This engine is the only bridge between the Command Ledger (Intent) and
  * the Physical World (Level). It operates on a "Pull" model:
- * 
+ *
  * 1. SCAN: Every tick, it checks the "Dirty Set" from WorldHistoryManager.
- * 
+ *
  * 2. COMPARE: It compares Top-of-Stack Intent vs. Actual BlockState.
- * 
- * 3. COMMAND: 
+ *
+ * 3. COMMAND:
  *    - If intent is Air but reality is Block -> Register PHYSICAL DECONSTRUCTION Job.
  *    - If intent is Block but reality is Air/Ghost -> Place GHOST marker with Intent NBT.
  *    - If intent matches reality -> Mark coordinate as CLEAN.
- * 
- * This ensures "Zero Instant Magic". Only ghost markers appear instantly; 
+ *
+ * This ensures "Zero Instant Magic". Only ghost markers appear instantly;
  * physical changes are always delegated to the Drone Swarm.
+ *
+ * RATE LIMITING: To prevent server freeze on large blueprints, reconciliation
+ * is limited to 64 coordinates per tick. Excess dirty positions are processed
+ * on subsequent ticks.
  */
 public class WorldReconciler {
     private static final Map<Level, WorldReconciler> INSTANCES = new ConcurrentHashMap<>();
+    private static final int MAX_RECONCILE_PER_TICK = 64;
 
     public static WorldReconciler get(Level level) {
         return INSTANCES.computeIfAbsent(level, k -> new WorldReconciler());
@@ -45,13 +51,19 @@ public class WorldReconciler {
         WorldHistoryManager history = WorldHistoryManager.get(level);
         GhostJobManager jobManager = GhostJobManager.get(level);
 
-        Set<BlockPos> dirty = new HashSet<>(history.getDirtyPositions());
+        Set<BlockPos> dirty = history.getDirtyPositions();
         if (dirty.isEmpty()) return;
 
-        for (BlockPos pos : dirty) {
+        // Rate limit: only process 64 coordinates per tick to prevent server freeze
+        int processed = 0;
+        Iterator<BlockPos> iterator = dirty.iterator();
+        while (iterator.hasNext() && processed < MAX_RECONCILE_PER_TICK) {
+            BlockPos pos = iterator.next();
             if (reconcileCoordinate(level, pos, history, jobManager)) {
+                iterator.remove(); // Safe removal via iterator
                 history.markClean(pos);
             }
+            processed++;
         }
     }
 
