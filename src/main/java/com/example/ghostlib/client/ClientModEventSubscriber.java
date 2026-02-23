@@ -1,7 +1,6 @@
 package com.example.ghostlib.client;
 
 import com.example.ghostlib.GhostLib;
-import com.example.factorycore.client.ModularUIScreenProxy;
 import com.example.ghostlib.client.model.DroneModel;
 import com.example.ghostlib.client.renderer.entity.DroneRenderer;
 import com.example.ghostlib.client.util.ClientClipboard;
@@ -57,10 +56,25 @@ public class ClientModEventSubscriber {
 
     @SubscribeEvent
     public static void registerScreens(RegisterMenuScreensEvent event) {
-        event.register(com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(), ModularUIScreenProxy.create());
-        event.register(com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), ModularUIScreenProxy.create());
-        event.register(com.example.ghostlib.registry.ModMenus.TEST_MENU.get(), ModularUIScreenProxy.create());
-        event.register(com.example.ghostlib.registry.ModMenus.ASSEMBLER_TEST_MENU.get(), ModularUIScreenProxy.create());
+        // Optional FactoryCore integration - wrap in try-catch to prevent crash if FactoryCore is missing
+        try {
+            Class<?> proxyClass = Class.forName("com.example.factorycore.client.ModularUIScreenProxy");
+            Object screenFactory = proxyClass.getMethod("create").invoke(null);
+            // Cast to proper type using reflection
+            @SuppressWarnings("unchecked")
+            var registerMethod = event.getClass().getMethod("register", net.minecraft.world.inventory.MenuType.class, Class.forName("net.minecraft.client.gui.screens.MenuScreens$ScreenConstructor"));
+            registerMethod.invoke(event,
+                com.example.ghostlib.registry.ModMenus.DRONE_PORT_MENU.get(), screenFactory);
+            registerMethod.invoke(event,
+                com.example.ghostlib.registry.ModMenus.LOGISTICAL_CHEST_MENU.get(), screenFactory);
+            registerMethod.invoke(event,
+                com.example.ghostlib.registry.ModMenus.TEST_MENU.get(), screenFactory);
+            registerMethod.invoke(event,
+                com.example.ghostlib.registry.ModMenus.ASSEMBLER_TEST_MENU.get(), screenFactory);
+        } catch (Exception e) {
+            // FactoryCore not available - skip screen registration
+            GhostLib.LOGGER.warn("FactoryCore not found, skipping menu screen registration");
+        }
     }
 
     @SubscribeEvent
@@ -262,9 +276,13 @@ public class ClientModEventSubscriber {
                         BlockState s = mc.level.getBlockState(p);
                         if (!s.isAir()) {
                             // "Single Entity" Logic: Skip non-base parts of known multiblocks
-                            // 1. FactoryCore Poles: Only record BOTTOM
-                            if (s.hasProperty(com.example.factorycore.block.ElectricalPoleBlock.PART)) {
-                                if (s.getValue(com.example.factorycore.block.ElectricalPoleBlock.PART) != com.example.factorycore.block.ElectricalPoleBlock.PolePart.BOTTOM) continue;
+                            // 1. FactoryCore Poles: Only record BOTTOM (optional integration)
+                            try {
+                                if (s.hasProperty(com.example.factorycore.block.ElectricalPoleBlock.PART)) {
+                                    if (s.getValue(com.example.factorycore.block.ElectricalPoleBlock.PART) != com.example.factorycore.block.ElectricalPoleBlock.PolePart.BOTTOM) continue;
+                                }
+                            } catch (NoClassDefFoundError e) {
+                                // FactoryCore not loaded - skip this check
                             }
                             // 2. Vanilla Double Blocks (Tall Grass, Flowers): Only record LOWER
                             if (s.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF)) {
