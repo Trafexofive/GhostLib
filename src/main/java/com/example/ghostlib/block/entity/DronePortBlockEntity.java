@@ -308,12 +308,13 @@ public class DronePortBlockEntity extends BlockEntity
         // 1. Check port's own inventory first
         for (int i = 0; i < inventory.getSlots(); i++) {
             if (inventory.getStackInSlot(i).is(stack.getItem())) {
+                com.example.ghostlib.util.GhostLogger.logistics("Port extract: found " + stack.getItem() + " in port slot " + i);
                 return inventory.extractItem(i, amount, simulate);
             }
         }
 
         // 2. Scan nearby inventories within 16 blocks (vanilla chests, barrels, etc.)
-        if (level != null && !level.isClientSide && !simulate) {
+        if (level != null && !level.isClientSide) {
             int range = 16;
             BlockPos center = worldPosition;
 
@@ -328,6 +329,8 @@ public class DronePortBlockEntity extends BlockEntity
             }
             nearbyPositions.sort(Comparator.comparingDouble(p -> p.distSqr(center)));
 
+            com.example.ghostlib.util.GhostLogger.logistics("Port extract: scanning " + nearbyPositions.size() + " nearby inventories for " + stack.getItem());
+
             for (BlockPos pos : nearbyPositions) {
                 net.neoforged.neoforge.items.IItemHandler handler =
                         level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
@@ -335,13 +338,17 @@ public class DronePortBlockEntity extends BlockEntity
 
                 for (int i = 0; i < handler.getSlots(); i++) {
                     if (handler.getStackInSlot(i).is(stack.getItem())) {
+                        com.example.ghostlib.util.GhostLogger.logistics("Port extract: found " + stack.getItem() + " at " + pos + " slot " + i);
                         ItemStack extracted = handler.extractItem(i, amount, simulate);
                         if (!extracted.isEmpty()) {
+                            com.example.ghostlib.util.GhostLogger.logistics("Port extract: extracted " + extracted.getCount() + " from " + pos);
                             return extracted;
                         }
                     }
                 }
             }
+
+            com.example.ghostlib.util.GhostLogger.logistics("Port extract: FAILED to find " + stack.getItem() + " in any nearby inventory");
         }
 
         return ItemStack.EMPTY;

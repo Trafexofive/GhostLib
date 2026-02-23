@@ -526,7 +526,7 @@ public class DroneEntity extends PathfinderMob {
         // Player fallback — rate-limited: one inventory scan per 10 t while in range
         Player player = level().getNearestPlayer(this, 64);
         if (player == null) {
-            GhostLogger.drone("Drone " + this.getId() + ": no player in range for fetch.");
+            GhostLogger.drone("Drone " + this.getId() + ": no items available anywhere (not in port storage or player inv).");
             droneState = DroneState.FINDING_JOB; // try again later
             return;
         }
@@ -540,7 +540,8 @@ public class DroneEntity extends PathfinderMob {
 
             int slot = findPlayerItemSlot(player, required);
             if (slot == -1) {
-                // Player doesn't have it — hibernate this job
+                // Player doesn't have it either — hibernate this job
+                GhostLogger.drone("Drone " + this.getId() + ": item not in port storage or player inv. Marking MISSING_ITEMS.");
                 updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.MISSING_ITEMS);
                 GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
                 currentJob  = null;
