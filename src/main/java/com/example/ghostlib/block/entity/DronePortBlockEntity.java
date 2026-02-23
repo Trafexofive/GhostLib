@@ -280,7 +280,7 @@ public class DronePortBlockEntity extends BlockEntity
             remainder = inventory.insertItem(i, remainder, simulate);
         }
 
-        // 2. If still has items, try logistics network (storage/buffer chests)
+        // 2. Try logistics network (LogisticalChests - storage/buffer)
         if (!remainder.isEmpty() && level != null && !level.isClientSide) {
             LogisticsNetworkManager netMgr = LogisticsNetworkManager.get(level);
             Integer netId = netMgr.getNetworkId(worldPosition);
@@ -288,10 +288,6 @@ public class DronePortBlockEntity extends BlockEntity
                 for (BlockPos memberPos : netMgr.getNetworkMembers(netId)) {
                     if (memberPos.equals(worldPosition)) continue; // Skip self
                     if (!level.isLoaded(memberPos)) continue;
-
-                    net.neoforged.neoforge.items.IItemHandler handler =
-                            level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, memberPos, null);
-                    if (handler == null) continue;
 
                     // Prefer storage/buffer chests for insertion
                     if (level.getBlockEntity(memberPos) instanceof LogisticalChestBlockEntity lc) {
@@ -302,9 +298,35 @@ public class DronePortBlockEntity extends BlockEntity
                         }
                     }
 
+                    net.neoforged.neoforge.items.IItemHandler handler =
+                            level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, memberPos, null);
+                    if (handler == null) continue;
+
                     remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, remainder, simulate);
                     if (remainder.isEmpty()) break;
                 }
+            }
+        }
+
+        // 3. Fallback: Nearby vanilla inventories (any chest/barrel within 16 blocks)
+        if (!remainder.isEmpty() && level != null && !level.isClientSide && !simulate) {
+            int range = 16;
+            BlockPos center = worldPosition;
+            for (BlockPos pos : BlockPos.betweenClosed(
+                    center.offset(-range, -4, -range),
+                    center.offset(range, 4, range))) {
+                if (pos.equals(worldPosition)) continue;
+                if (!level.isLoaded(pos)) continue;
+
+                // Skip logistical chests (already handled above)
+                if (level.getBlockEntity(pos) instanceof LogisticalChestBlockEntity) continue;
+
+                net.neoforged.neoforge.items.IItemHandler handler =
+                        level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+                if (handler == null) continue;
+
+                remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, remainder, simulate);
+                if (remainder.isEmpty()) break;
             }
         }
 
@@ -320,7 +342,7 @@ public class DronePortBlockEntity extends BlockEntity
             }
         }
 
-        // 2. Check connected logistics network
+        // 2. Check connected logistics network (LogisticalChests)
         if (level != null && !level.isClientSide) {
             LogisticsNetworkManager netMgr = LogisticsNetworkManager.get(level);
             Integer netId = netMgr.getNetworkId(worldPosition);
@@ -338,9 +360,7 @@ public class DronePortBlockEntity extends BlockEntity
                         if (handler.getStackInSlot(i).is(stack.getItem())) {
                             ItemStack extracted = handler.extractItem(i, amount, simulate);
                             if (!extracted.isEmpty()) {
-                                // If not simulating, optionally buffer through port inventory
                                 if (!simulate && extracted.getCount() < amount) {
-                                    // Partial extract - try to get more from port
                                     ItemStack fromPort = extractItem(stack, amount - extracted.getCount(), false);
                                     if (!fromPort.isEmpty()) {
                                         extracted.grow(fromPort.getCount());
@@ -348,6 +368,34 @@ public class DronePortBlockEntity extends BlockEntity
                                 }
                                 return extracted;
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: Scan nearby inventories (vanilla chests, barrels, etc.) within 16 blocks
+        if (level != null && !level.isClientSide && !simulate) {
+            int range = 16;
+            BlockPos center = worldPosition;
+            for (BlockPos pos : BlockPos.betweenClosed(
+                    center.offset(-range, -4, -range),
+                    center.offset(range, 4, range))) {
+                if (pos.equals(worldPosition)) continue;
+                if (!level.isLoaded(pos)) continue;
+
+                net.neoforged.neoforge.items.IItemHandler handler =
+                        level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
+                if (handler == null) continue;
+
+                // Skip logistical chests (already handled above)
+                if (level.getBlockEntity(pos) instanceof LogisticalChestBlockEntity) continue;
+
+                for (int i = 0; i < handler.getSlots(); i++) {
+                    if (handler.getStackInSlot(i).is(stack.getItem())) {
+                        ItemStack extracted = handler.extractItem(i, amount, simulate);
+                        if (!extracted.isEmpty()) {
+                            return extracted;
                         }
                     }
                 }
