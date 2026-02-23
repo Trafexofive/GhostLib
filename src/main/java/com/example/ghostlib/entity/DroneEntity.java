@@ -500,7 +500,6 @@ public class DroneEntity extends PathfinderMob {
 
         ItemStack required = new ItemStack(currentJob.targetAfter().getBlock().asItem());
         if (hasItemInInventory(required)) {
-            GhostLogger.drone("Drone " + this.getId() + ": already has " + required + ", going to build.");
             droneState = DroneState.TRAVELING_BUILD;
             return;
         }
@@ -512,16 +511,19 @@ public class DroneEntity extends PathfinderMob {
 
             if (this.position().distanceTo(Vec3.atCenterOf(portPos).add(0, 1, 0)) < 2.0) {
                 if (level().getBlockEntity(portPos) instanceof IDronePort dp) {
-                    GhostLogger.drone("Drone " + this.getId() + ": at port, trying to extract " + required);
                     ItemStack extracted = dp.extractItem(required, 1, false);
                     if (!extracted.isEmpty()) {
-                        GhostLogger.drone("Drone " + this.getId() + ": got " + extracted + " from port!");
-                        inventory.addItem(extracted);
-                        droneState = DroneState.TRAVELING_BUILD;
-                        updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.INCOMING);
+                        // Race condition check - make sure we still have space
+                        if (hasSpace()) {
+                            inventory.addItem(extracted);
+                            droneState = DroneState.TRAVELING_BUILD;
+                            updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.INCOMING);
+                        } else {
+                            // No space - dump first then retry
+                            droneState = DroneState.DUMPING_ITEMS;
+                        }
                         return;
                     }
-                    GhostLogger.drone("Drone " + this.getId() + ": port extract FAILED, trying player inventory as fallback.");
                 }
             }
             return;
@@ -539,18 +541,16 @@ public class DroneEntity extends PathfinderMob {
 
                 int slot = findPlayerItemSlot(player, required);
                 if (slot != -1) {
-                    ItemStack stackInSlot = player.getInventory().getItem(slot);
                     if (!hasSpace()) {
                         droneState = DroneState.DUMPING_ITEMS;
                         releaseCurrentJob();
                         return;
                     }
 
-                    ItemStack extracted = stackInSlot.copy();
+                    ItemStack extracted = player.getInventory().getItem(slot).copy();
                     extracted.setCount(1);
                     player.getInventory().removeItem(slot, 1);
                     inventory.addItem(extracted);
-                    GhostLogger.drone("Drone " + this.getId() + ": got " + required + " from player!");
                     droneState = DroneState.TRAVELING_BUILD;
                     updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.INCOMING);
                     return;
@@ -559,13 +559,13 @@ public class DroneEntity extends PathfinderMob {
             return;
         }
 
-        // No items available anywhere - mark job as missing items
-        GhostLogger.drone("Drone " + this.getId() + ": NO ITEMS AVAILABLE anywhere (port or player). Marking MISSING_ITEMS.");
+        // No items available - mark MISSING_ITEMS but allow retry after cooldown
+        GhostLogger.drone("Drone " + this.getId() + ": no items for " + required + ". Marking MISSING_ITEMS with retry.");
         updateGhostState(currentJob.pos(), GhostBlockEntity.GhostState.MISSING_ITEMS);
         GhostJobManager.get(level()).releaseJob(currentJob.pos(), this.getUUID());
-        currentJob  = null;
-        droneState  = DroneState.IDLE;
-        waitTicks   = 100;
+        currentJob = null;
+        droneState = DroneState.IDLE;
+        waitTicks = 200; // 10 second cooldown before retry
     }
 
     // ── TRAVELING_BUILD ───────────────────────────────────────────────────────

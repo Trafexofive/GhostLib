@@ -12,7 +12,7 @@ public class ModAttributes {
     public static final DeferredRegister<Attribute> ATTRIBUTES = DeferredRegister.create(Registries.ATTRIBUTE, GhostLib.MODID);
 
     public static final DeferredHolder<Attribute, Attribute> INTERACTION_RANGE = ATTRIBUTES.register("interaction_range",
-            () -> new RangedAttribute("attribute.name.ghostlib.interaction_range", 4.5D, 0.0D, 64.0D).setSyncable(true));
+            () -> new RangedAttribute("attribute.name.ghostlib.interaction_range", 16.0D, 0.0D, 64.0D).setSyncable(true));
 
     public static final DeferredHolder<Attribute, Attribute> SEARCH_RANGE = ATTRIBUTES.register("search_range",
             () -> new RangedAttribute("attribute.name.ghostlib.search_range", 64.0D, 0.0D, 2048.0D).setSyncable(true));
