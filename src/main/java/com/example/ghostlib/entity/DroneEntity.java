@@ -388,12 +388,24 @@ public class DroneEntity extends PathfinderMob {
             else                                { droneState = DroneState.RETURNING_TO_OWNER; return; }
         }
 
-        // Non-empty inventory
+        // Non-empty inventory - check if we have construction items
         if (!isInventoryEmpty()) {
+            // For PORT drones: check if items are for construction jobs
             if (getMode() == DroneMode.PORT) {
-                droneState = DroneState.DUMPING_ITEMS; return;
+                // Check if we have items that match a construction job
+                GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), false);
+                if (job != null && job.type() == GhostJobManager.JobType.CONSTRUCTION
+                        && hasItemInInventory(new ItemStack(job.targetAfter().getBlock().asItem()))) {
+                    currentJob = job;
+                    droneState = DroneState.TRAVELING_BUILD;
+                    return;
+                }
+                if (job != null) GhostJobManager.get(level()).releaseJob(job.pos(), this.getUUID());
+                // No matching job → dump items
+                droneState = DroneState.DUMPING_ITEMS;
+                return;
             } else {
-                // Check if we can immediately service a construction job with what we're carrying
+                // PLAYER mode: same logic
                 GhostJobManager.Job job = GhostJobManager.get(level()).requestJob(this.blockPosition(), this.getUUID(), false);
                 if (job != null && job.type() == GhostJobManager.JobType.CONSTRUCTION
                         && hasItemInInventory(new ItemStack(job.targetAfter().getBlock().asItem()))) {
