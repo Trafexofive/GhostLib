@@ -50,9 +50,6 @@ public class ModItems {
     public static final DeferredItem<Item> ASSEMBLER_TEST_ITEM = ITEMS.register("assembler_test_tool",
             () -> new com.example.ghostlib.item.AssemblerTestItem(new Item.Properties().stacksTo(1)));
 
-    public static final DeferredItem<Item> LOGISTICS_MARKER = ITEMS.register("logistics_marker",
-            () -> new com.example.ghostlib.item.LogisticsMarkerItem());
-
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }

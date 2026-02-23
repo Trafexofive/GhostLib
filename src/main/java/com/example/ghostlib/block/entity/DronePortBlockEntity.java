@@ -2,8 +2,6 @@ package com.example.ghostlib.block.entity;
 
 import com.example.ghostlib.GhostLib;
 import com.example.ghostlib.api.IDronePort;
-import com.example.ghostlib.block.LogisticalChestBlock;
-import com.example.ghostlib.block.entity.LogisticalChestBlockEntity;
 import com.example.ghostlib.config.GhostLibConfig;
 import com.example.ghostlib.entity.DroneEntity;
 import com.example.ghostlib.registry.ModBlockEntities;
@@ -11,7 +9,6 @@ import com.example.ghostlib.registry.ModEntities;
 import com.example.ghostlib.registry.ModItems;
 import com.example.ghostlib.util.GhostJobManager;
 import com.example.ghostlib.util.GhostGUI;
-import com.example.ghostlib.util.LogisticsNetworkManager;
 import com.lowdragmc.lowdraglib2.gui.ui.ModularUI;
 import com.lowdragmc.lowdraglib2.gui.ui.UI;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.ProgressBar;
@@ -39,6 +36,8 @@ import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -111,15 +110,11 @@ public class DronePortBlockEntity extends BlockEntity
         super.onLoad();
         if (level != null && !level.isClientSide) {
             portId = UUID.nameUUIDFromBytes(worldPosition.toString().getBytes());
-            LogisticsNetworkManager.get(level).joinOrCreateNetwork(worldPosition, level);
         }
     }
 
     @Override
     public void setRemoved() {
-        if (level != null && !level.isClientSide) {
-            LogisticsNetworkManager.get(level).leaveNetwork(worldPosition);
-        }
         super.setRemoved();
     }
 
@@ -247,15 +242,14 @@ public class DronePortBlockEntity extends BlockEntity
             if (!s.isEmpty() && s.is(required.getItem())) return true;
         }
 
-        // Logistics network
-        LogisticsNetworkManager netMgr = LogisticsNetworkManager.get(level);
-        if (netMgr == null) return false;
-        Integer netId = netMgr.getNetworkId(worldPosition);
-        if (netId == null) return false;
-
-        for (BlockPos memberPos : netMgr.getNetworkMembers(netId)) {
-            if (!level.isLoaded(memberPos)) continue;
-            IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, memberPos, null);
+        // Scan nearby inventories within 16 blocks
+        int range = 16;
+        for (BlockPos pos : BlockPos.betweenClosed(
+                worldPosition.offset(-range, -4, -range),
+                worldPosition.offset(range, 4, range))) {
+            if (pos.equals(worldPosition)) continue;
+            if (!level.isLoaded(pos)) continue;
+            IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
             if (handler == null) continue;
             for (int j = 0; j < handler.getSlots(); j++) {
                 if (handler.getStackInSlot(j).is(required.getItem())) return true;
@@ -280,47 +274,23 @@ public class DronePortBlockEntity extends BlockEntity
             remainder = inventory.insertItem(i, remainder, simulate);
         }
 
-        // 2. Try logistics network (LogisticalChests - storage/buffer)
-        if (!remainder.isEmpty() && level != null && !level.isClientSide) {
-            LogisticsNetworkManager netMgr = LogisticsNetworkManager.get(level);
-            Integer netId = netMgr.getNetworkId(worldPosition);
-            if (netId != null) {
-                for (BlockPos memberPos : netMgr.getNetworkMembers(netId)) {
-                    if (memberPos.equals(worldPosition)) continue; // Skip self
-                    if (!level.isLoaded(memberPos)) continue;
-
-                    // Prefer storage/buffer chests for insertion
-                    if (level.getBlockEntity(memberPos) instanceof LogisticalChestBlockEntity lc) {
-                        var type = lc.getChestType();
-                        if (type != LogisticalChestBlock.ChestType.STORAGE &&
-                            type != LogisticalChestBlock.ChestType.BUFFER) {
-                            continue; // Skip provider/requester chests for insertion
-                        }
-                    }
-
-                    net.neoforged.neoforge.items.IItemHandler handler =
-                            level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, memberPos, null);
-                    if (handler == null) continue;
-
-                    remainder = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, remainder, simulate);
-                    if (remainder.isEmpty()) break;
-                }
-            }
-        }
-
-        // 3. Fallback: Nearby vanilla inventories (any chest/barrel within 16 blocks)
+        // 2. Scan nearby inventories within 16 blocks (vanilla chests, barrels, etc.)
         if (!remainder.isEmpty() && level != null && !level.isClientSide && !simulate) {
             int range = 16;
             BlockPos center = worldPosition;
+
+            // Sort positions by distance to prefer closer inventories
+            List<BlockPos> nearbyPositions = new java.util.ArrayList<>();
             for (BlockPos pos : BlockPos.betweenClosed(
                     center.offset(-range, -4, -range),
                     center.offset(range, 4, range))) {
                 if (pos.equals(worldPosition)) continue;
                 if (!level.isLoaded(pos)) continue;
+                nearbyPositions.add(pos);
+            }
+            nearbyPositions.sort(Comparator.comparingDouble(p -> p.distSqr(center)));
 
-                // Skip logistical chests (already handled above)
-                if (level.getBlockEntity(pos) instanceof LogisticalChestBlockEntity) continue;
-
+            for (BlockPos pos : nearbyPositions) {
                 net.neoforged.neoforge.items.IItemHandler handler =
                         level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
                 if (handler == null) continue;
@@ -342,55 +312,26 @@ public class DronePortBlockEntity extends BlockEntity
             }
         }
 
-        // 2. Check marked inventories in logistics network (HIGHEST PRIORITY)
-        if (level != null && !level.isClientSide) {
-            LogisticsNetworkManager netMgr = LogisticsNetworkManager.get(level);
-            Integer netId = netMgr.getNetworkId(worldPosition);
-            if (netId != null) {
-                for (BlockPos memberPos : netMgr.getNetworkMembers(netId)) {
-                    if (memberPos.equals(worldPosition)) continue; // Skip self
-                    if (!level.isLoaded(memberPos)) continue;
-
-                    net.neoforged.neoforge.items.IItemHandler handler =
-                            level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, memberPos, null);
-                    if (handler == null) continue;
-
-                    // Check if this inventory has the item
-                    for (int i = 0; i < handler.getSlots(); i++) {
-                        if (handler.getStackInSlot(i).is(stack.getItem())) {
-                            ItemStack extracted = handler.extractItem(i, amount, simulate);
-                            if (!extracted.isEmpty()) {
-                                if (!simulate && extracted.getCount() < amount) {
-                                    ItemStack fromPort = extractItem(stack, amount - extracted.getCount(), false);
-                                    if (!fromPort.isEmpty()) {
-                                        extracted.grow(fromPort.getCount());
-                                    }
-                                }
-                                return extracted;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Fallback: Auto-scan nearby vanilla inventories within 16 blocks
-        // Only used if no marked inventories have the item
+        // 2. Scan nearby inventories within 16 blocks (vanilla chests, barrels, etc.)
         if (level != null && !level.isClientSide && !simulate) {
             int range = 16;
             BlockPos center = worldPosition;
+
+            // Sort positions by distance to prefer closer inventories
+            List<BlockPos> nearbyPositions = new java.util.ArrayList<>();
             for (BlockPos pos : BlockPos.betweenClosed(
                     center.offset(-range, -4, -range),
                     center.offset(range, 4, range))) {
                 if (pos.equals(worldPosition)) continue;
                 if (!level.isLoaded(pos)) continue;
+                nearbyPositions.add(pos);
+            }
+            nearbyPositions.sort(Comparator.comparingDouble(p -> p.distSqr(center)));
 
+            for (BlockPos pos : nearbyPositions) {
                 net.neoforged.neoforge.items.IItemHandler handler =
                         level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, pos, null);
                 if (handler == null) continue;
-
-                // Skip logistical chests (already handled in step 2)
-                if (level.getBlockEntity(pos) instanceof LogisticalChestBlockEntity) continue;
 
                 for (int i = 0; i < handler.getSlots(); i++) {
                     if (handler.getStackInSlot(i).is(stack.getItem())) {
